@@ -15,6 +15,7 @@ docker run -it --rm \
   -v "$HOME/Slicer:$HOME/Slicer" \
   -v "$HOME/slicer-superbuild-v5.10:$HOME/slicer-superbuild-v5.10" \
   -v "$HOME/.cache:$HOME/.cache" \
+  -v "$HOME/.claude:$HOME/.claude" \
   -w "$HOME/Slicer" \
   slicer-claude
 
