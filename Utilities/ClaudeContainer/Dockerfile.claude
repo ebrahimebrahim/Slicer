@@ -1,0 +1,60 @@
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install all dependencies in one layer:
+# - Slicer build deps (from Docs/developer_guide/build_instructions/linux.md)
+# - ccache for faster rebuilds
+# - xvfb for headless Slicer execution (needed for running Python tests)
+# - Useful dev tools
+RUN apt update && apt install -y \
+    # Slicer build dependencies
+    git \
+    build-essential \
+    cmake \
+    cmake-curses-gui \
+    cmake-qt-gui \
+    libqt5x11extras5-dev \
+    qtmultimedia5-dev \
+    libqt5svg5-dev \
+    qtwebengine5-dev \
+    libqt5xmlpatterns5-dev \
+    qttools5-dev \
+    qtbase5-private-dev \
+    qtbase5-dev \
+    qt5-qmake \
+    # Build acceleration
+    ccache \
+    # Headless execution (for testing Python scripts in Slicer)
+    xvfb \
+    # Useful tools
+    vim \
+    curl \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code using official installer
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Configure git
+# NOTE: Update these for your own user, or override at runtime
+# The safe.directory is needed because mounted volumes have different ownership
+RUN git config --global user.email "ebrahim.ebrahim@kitware.com" && \
+    git config --global user.name "Ebrahim Ebrahim" && \
+    git config --global --add safe.directory /home/ebrahim/Slicer
+
+# Set up ccache symlinks to match typical host configuration
+# This allows reusing a build tree that was configured with:
+#   -DCMAKE_CXX_COMPILER=$HOME/.local/bin/c++
+#   -DCMAKE_C_COMPILER=$HOME/.local/bin/cc
+# NOTE: Update the path if your host uses a different location
+RUN mkdir -p /home/ebrahim/.local/bin && \
+    ln -s /usr/bin/ccache /home/ebrahim/.local/bin/c++ && \
+    ln -s /usr/bin/ccache /home/ebrahim/.local/bin/cc
+
+# NOTE: Update this path for your setup
+WORKDIR /home/ebrahim/Slicer
+
+CMD ["/bin/bash"]
