@@ -35,8 +35,12 @@ RUN apt update && apt install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code using official installer
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install Claude Code using official installer and make it accessible to all users
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    chmod -R a+rX /root && \
+    chmod a+rx /root
+
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Configure git
 # NOTE: Update these for your own user, or override at runtime
@@ -52,7 +56,8 @@ RUN git config --global user.email "ebrahim.ebrahim@kitware.com" && \
 # NOTE: Update the path if your host uses a different location
 RUN mkdir -p /home/ebrahim/.local/bin && \
     ln -s /usr/bin/ccache /home/ebrahim/.local/bin/c++ && \
-    ln -s /usr/bin/ccache /home/ebrahim/.local/bin/cc
+    ln -s /usr/bin/ccache /home/ebrahim/.local/bin/cc && \
+    chmod 777 /home/ebrahim
 
 # NOTE: Update this path for your setup
 WORKDIR /home/ebrahim/Slicer
