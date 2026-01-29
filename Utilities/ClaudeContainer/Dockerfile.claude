@@ -35,19 +35,19 @@ RUN apt update && apt install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code using official installer and make it accessible to all users
+# Install Claude Code (same method as host so credentials are compatible)
+# Make /root traversable and /root/.local readable, symlink to /usr/local/bin
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
-    chmod -R a+rX /root && \
-    chmod a+rx /root
+    chmod a+x /root && \
+    chmod -R a+rX /root/.local && \
+    ln -s /root/.local/bin/claude /usr/local/bin/claude
 
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Configure git
+# Configure git (use --system so it applies to all users, not just root)
 # NOTE: Update these for your own user, or override at runtime
 # The safe.directory is needed because mounted volumes have different ownership
-RUN git config --global user.email "ebrahim.ebrahim@kitware.com" && \
-    git config --global user.name "Ebrahim Ebrahim" && \
-    git config --global --add safe.directory /home/ebrahim/Slicer
+RUN git config --system user.email "ebrahim.ebrahim@kitware.com" && \
+    git config --system user.name "Ebrahim Ebrahim" && \
+    git config --system --add safe.directory /home/ebrahim/Slicer
 
 # Set up ccache symlinks to match typical host configuration
 # This allows reusing a build tree that was configured with:
