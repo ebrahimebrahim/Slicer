@@ -19,6 +19,14 @@ from packaging.requirements import Requirement
 
 import slicer
 
+# Record whether scikit-image was already installed before the tour,
+# so we can restore the user's environment at the end.
+try:
+    import importlib.metadata as _md
+    _skimage_version_before_tour = _md.version("scikit-image")
+except _md.PackageNotFoundError:
+    _skimage_version_before_tour = None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -379,15 +387,28 @@ def step_constraints():
 # ---------------------------------------------------------------------------
 
 def step_cleanup():
-    slicer.util.infoDisplay(
-        "Cleanup\n"
-        "\n"
-        "We will now uninstall scikit-image to leave your\n"
-        "environment clean.",
-        windowTitle="Feature Tour [9/9] — Cleanup",
-    )
-
-    _uninstall_skimage()
+    if _skimage_version_before_tour is not None:
+        slicer.util.infoDisplay(
+            "Cleanup\n"
+            "\n"
+            f"scikit-image {_skimage_version_before_tour} was installed before\n"
+            "the tour. We will reinstall that exact version now.",
+            windowTitle="Feature Tour [9/9] — Cleanup",
+        )
+        _uninstall_skimage()
+        slicer.util.pip_install(
+            f"scikit-image=={_skimage_version_before_tour}",
+            requester="Feature Tour (restore)",
+        )
+    else:
+        slicer.util.infoDisplay(
+            "Cleanup\n"
+            "\n"
+            "scikit-image was not installed before the tour.\n"
+            "We will uninstall it to leave your environment clean.",
+            windowTitle="Feature Tour [9/9] — Cleanup",
+        )
+        _uninstall_skimage()
 
     slicer.util.infoDisplay(
         "Tour Complete!\n"
