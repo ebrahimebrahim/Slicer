@@ -92,3 +92,7 @@ Run `pre-commit run --all-files` to check formatting locally.
 ## Developer Setup
 
 Run `Utilities/SetupForDevelopment.sh` after cloning to configure git hooks and settings.
+
+## Slicer Python Environment
+
+The Slicer superbuild bundles its own Python interpreter, separate from the system Python. The executable is located at `<superbuild-path>/python-install/bin/PythonSlicer`. Use this interpreter (not system `python3` or `pip`) when testing Slicer Python APIs or checking installed packages.

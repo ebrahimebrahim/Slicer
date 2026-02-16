@@ -9,7 +9,13 @@
       "WebFetch(domain:github.com)",
       "Bash(find:*)",
       "WebSearch",
-      "Bash(cmake --build:*)"
+      "Bash(cmake --build:*)",
+      "WebFetch(domain:packaging.python.org)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:dependency-groups.readthedocs.io)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(uv tool run pre-commit run:*)"
     ]
   }
 }
