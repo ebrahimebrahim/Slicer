@@ -9,6 +9,7 @@ This PR adds new utility functions to `slicer.util` for managing Python dependen
 | Function | Purpose |
 |----------|---------|
 | `load_requirements(path)` | Load a `requirements.txt` file into `Requirement` objects |
+| `load_pyproject_dependencies(path)` | Load `[project.dependencies]` from a `pyproject.toml` file into `Requirement` objects |
 | `pip_check(req)` | Check if requirements are satisfied (pure Python, no subprocess) |
 | `pip_install(...)` | Extended with modal progress dialog, non-blocking mode, status bar feedback, and `--no-deps` support |
 | `pip_ensure(reqs, requester="...")` | High-level: checks, prompts, installs with progress, and offers restart if updated packages were already imported |
@@ -19,6 +20,14 @@ All install functions support optional `constraints` (constraints file) and `no_
 
 ```python
 reqs = slicer.util.load_requirements(self.resourcePath("requirements.txt"))
+slicer.util.pip_ensure(reqs, requester="MyExtension")
+import my_dependency  # Now safe
+```
+
+Or, with `pyproject.toml`:
+
+```python
+reqs = slicer.util.load_pyproject_dependencies(self.resourcePath("pyproject.toml"))
 slicer.util.pip_ensure(reqs, requester="MyExtension")
 import my_dependency  # Now safe
 ```
@@ -53,6 +62,19 @@ with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
     f.write("numpy>=1.20\npandas>=2.0\nscipy\n")
     path = f.name
 reqs = slicer.util.load_requirements(path)
+print([f"{r.name}: {r.specifier}" for r in reqs])
+os.unlink(path)
+```
+
+### load_pyproject_dependencies
+
+```python
+import tempfile, os
+with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+    f.write("[project]\ndependencies = [\n")
+    f.write('    "numpy>=1.20",\n    "pandas>=2.0",\n    "scipy",\n]\n')
+    path = f.name
+reqs = slicer.util.load_pyproject_dependencies(path)
 print([f"{r.name}: {r.specifier}" for r in reqs])
 os.unlink(path)
 ```
@@ -193,12 +215,15 @@ This verifies that `pip_install` works in the PythonSlicer environment where `sl
 <details>
 <summary><strong>Design Rationale (click to expand)</strong></summary>
 
-### Why requirements.txt instead of pyproject.toml?
+### Why requirements.txt? And why also pyproject.toml?
 
-- **Semantics:** `pyproject.toml` defines a distributable Python package. Slicer extensions aren't Python packages—they just need "install these things into this environment," which is exactly what `requirements.txt` is for.
-- **Directness:** `requirements.txt` _is_ pip's native input format. So no translation layer needed this way.
-- **Constraints support:** `pip install -c constraints.txt` handles dependency conflicts across extensions. Even with `pyproject.toml` you'd need a separate constraints file.
-- **uv is still okay:** There is some interest in incorporating `uv` in the future. It is good to know that `uv` supports `requirements.txt` natively (`uv pip compile requirements.txt`).
+`requirements.txt` is the primary recommended format. Slicer extensions aren't Python packages — they just need "install these things into this environment," which is exactly what `requirements.txt` is for. It's pip's native input format, every Python developer knows it, and it requires no boilerplate beyond the dependency list itself.
+
+That said, `pyproject.toml` is the modern standard in the Python ecosystem (PEP 621). It offers structured parsing via `tomllib` (stdlib) with no ad-hoc text handling, and extensions that already have a `pyproject.toml` for other tooling (ruff, pytest, etc.) can keep dependencies in one file. So we provide `load_pyproject_dependencies` as an alternative for extensions that prefer it.
+
+Both formats boil down to PEP 508 dependency strings. Both loader functions return the same `list[Requirement]` type, so the downstream API (`pip_check`, `pip_ensure`, `pip_install`) works identically regardless of which one you use.
+
+`load_pyproject_dependencies` reads only the `[project.dependencies]` list. Other fields in the `[project]` table (`name`, `version`, etc.) are not read or validated — extensions aren't Python packages and shouldn't need to provide them.
 
 ### Why pure-Python pip_check instead of pip --dry-run?
 
@@ -250,6 +275,12 @@ pip_install(requirements="numpy scipy", no_deps_requirements="problematic-pkg==1
 ```
 
 This also correctly handles non-blocking mode by chaining the two pip calls internally.
+
+### Why `pip_install` doesn't accept `list[Requirement]`
+
+It would feel natural to write `pip_install(load_requirements("requirements.txt"))`. The fact that you can't is a little unfortunate — it looks like it *should* work. But `pip_install` is the one function in this PR that is extremely widely used in the wild, and we don't want to make breaking changes to its signature. It's also a low-level function that mirrors the pip CLI, taking the same kind of string arguments you'd pass on the command line, so it makes sense to leave it working the way it does.
+
+The new structured `list[Requirement]` input type goes into the new functions instead: `pip_check` and `pip_ensure`. In practice, `pip_ensure(load_requirements("requirements.txt"))` is the call you want anyway-- it checks what's already installed, prompts the user, installs only what's missing, and detects whether a restart is needed. So accepting `Requirement` objects at the `pip_ensure` level rather than the `pip_install` level steers developers toward the safer, idempotent workflow.
 
 ### Why `pip_` function naming
 

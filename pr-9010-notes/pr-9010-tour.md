@@ -66,7 +66,7 @@ def step_welcome():
         "Click OK to proceed to the next step.\n"
         "\n"
         "We will use scikit-image as a demo package throughout the tour.",
-        windowTitle="Feature Tour [1/9] — Welcome",
+        windowTitle="Feature Tour [1/10] — Welcome",
     )
     step_load_requirements()
 
@@ -86,7 +86,7 @@ def step_load_requirements():
         "are automatically skipped.\n"
         "\n"
         "We will create a temp requirements file and load it.",
-        windowTitle="Feature Tour [2/9] — load_requirements",
+        windowTitle="Feature Tour [2/10] — load_requirements",
     )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -105,13 +105,56 @@ def step_load_requirements():
     slicer.util.infoDisplay(
         f"Loaded {len(reqs)} requirements (comments and options skipped):\n"
         "\n" + "\n".join(lines),
-        windowTitle="Feature Tour [2/9] — load_requirements result",
+        windowTitle="Feature Tour [2/10] — load_requirements result",
+    )
+    step_load_pyproject()
+
+
+# ---------------------------------------------------------------------------
+# Step 3 — load_pyproject_dependencies
+# ---------------------------------------------------------------------------
+
+def step_load_pyproject():
+    slicer.util.infoDisplay(
+        "load_pyproject_dependencies(path)\n"
+        "\n"
+        "Alternative to load_requirements — reads the\n"
+        "[project.dependencies] list from a pyproject.toml file\n"
+        "(PEP 621) and returns the same Requirement objects.\n"
+        "\n"
+        "Only the dependencies list is read; other fields in\n"
+        "[project] (name, version, etc.) are not required.\n"
+        "\n"
+        "We will create a temp pyproject.toml and load it.",
+        windowTitle="Feature Tour [3/10] — load_pyproject_dependencies",
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write("[project]\n")
+        f.write("dependencies = [\n")
+        f.write('    "numpy>=1.20",\n')
+        f.write('    "scikit-image>=0.20",\n')
+        f.write('    "nonexistent-package-xyz>=1.0",\n')
+        f.write("]\n")
+        path = f.name
+
+    reqs = slicer.util.load_pyproject_dependencies(path)
+    os.unlink(path)
+
+    lines = [f"  {r.name}  {r.specifier}" for r in reqs]
+    slicer.util.infoDisplay(
+        f"Loaded {len(reqs)} dependencies from pyproject.toml:\n"
+        "\n" + "\n".join(lines) + "\n"
+        "\n"
+        "Same result as load_requirements — both return\n"
+        "Requirement objects that work with pip_check and pip_ensure.",
+        windowTitle="Feature Tour [3/10] — load_pyproject_dependencies result",
     )
     step_pip_check()
 
 
 # ---------------------------------------------------------------------------
-# Step 3 — pip_check
+# Step 4 — pip_check
 # ---------------------------------------------------------------------------
 
 def step_pip_check():
@@ -124,7 +167,7 @@ def step_pip_check():
         "\n"
         "We will check several requirements against the current\n"
         "environment.",
-        windowTitle="Feature Tour [3/9] — pip_check",
+        windowTitle="Feature Tour [4/10] — pip_check",
     )
 
     checks = [
@@ -144,13 +187,13 @@ def step_pip_check():
     slicer.util.infoDisplay(
         "pip_check results:\n"
         "\n" + "\n\n".join(results),
-        windowTitle="Feature Tour [3/9] — pip_check results",
+        windowTitle="Feature Tour [4/10] — pip_check results",
     )
     step_install_dialog()
 
 
 # ---------------------------------------------------------------------------
-# Step 4 — pip_install with modal progress dialog
+# Step 5 — pip_install with modal progress dialog
 # ---------------------------------------------------------------------------
 
 def step_install_dialog():
@@ -170,7 +213,7 @@ def step_install_dialog():
         "\n"
         "Click OK to install scikit-image. Try expanding the\n"
         "Details section in the progress dialog that appears!",
-        windowTitle="Feature Tour [4/9] — Progress Dialog",
+        windowTitle="Feature Tour [5/10] — Progress Dialog",
     )
 
     slicer.util.pip_install("scikit-image", requester="Feature Tour")
@@ -180,13 +223,13 @@ def step_install_dialog():
         "\n"
         "You just saw the modal progress dialog with real-time\n"
         "pip output in the Details section.",
-        windowTitle="Feature Tour [4/9] — Progress Dialog done",
+        windowTitle="Feature Tour [5/10] — Progress Dialog done",
     )
     step_nonblocking()
 
 
 # ---------------------------------------------------------------------------
-# Step 5 — Non-blocking install with status bar
+# Step 6 — Non-blocking install with status bar
 # ---------------------------------------------------------------------------
 
 def step_nonblocking():
@@ -206,7 +249,7 @@ def step_nonblocking():
         "which should return True.\n"
         "\n"
         "Click OK to begin the non-blocking install.",
-        windowTitle="Feature Tour [5/9] — Status Bar Mode",
+        windowTitle="Feature Tour [6/10] — Status Bar Mode",
     )
 
     def on_complete(return_code):
@@ -236,12 +279,12 @@ def step_nonblocking():
 
 
 def _after_nonblocking(msg):
-    slicer.util.infoDisplay(msg, windowTitle="Feature Tour [5/9] — Status Bar done")
+    slicer.util.infoDisplay(msg, windowTitle="Feature Tour [6/10] — Status Bar done")
     step_pip_ensure()
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — pip_ensure with confirmation dialog
+# Step 7 — pip_ensure with confirmation dialog
 # ---------------------------------------------------------------------------
 
 def step_pip_ensure():
@@ -261,7 +304,7 @@ def step_pip_ensure():
         "(No restart prompt this time — scikit-image was not imported.)\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [6/9] — pip_ensure",
+        windowTitle="Feature Tour [7/10] — pip_ensure",
     )
 
     reqs = [Requirement("scikit-image>=0.20")]
@@ -279,13 +322,13 @@ def step_pip_ensure():
         "Calling pip_ensure again now would be instant — pip_check\n"
         "sees that scikit-image is already installed and skips\n"
         "everything.",
-        windowTitle="Feature Tour [6/9] — pip_ensure done",
+        windowTitle="Feature Tour [7/10] — pip_ensure done",
     )
     step_restart_prompt()
 
 
 # ---------------------------------------------------------------------------
-# Step 7 — Restart prompt demonstration
+# Step 8 — Restart prompt demonstration
 # ---------------------------------------------------------------------------
 
 def step_restart_prompt():
@@ -305,7 +348,7 @@ def step_restart_prompt():
         "the tour (do not actually restart).\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [7/9] — Restart Prompt",
+        windowTitle="Feature Tour [8/10] — Restart Prompt",
     )
 
     # Import scikit-image so it's in sys.modules
@@ -328,13 +371,13 @@ def step_restart_prompt():
         "\n"
         "This feature helps extension users know when they need to\n"
         "restart Slicer after a package update.",
-        windowTitle="Feature Tour [7/9] — Restart Prompt done",
+        windowTitle="Feature Tour [8/10] — Restart Prompt done",
     )
     step_constraints()
 
 
 # ---------------------------------------------------------------------------
-# Step 8 — Constraints file
+# Step 9 — Constraints file
 # ---------------------------------------------------------------------------
 
 def step_constraints():
@@ -353,7 +396,7 @@ def step_constraints():
         "to < 0.25, then install it.\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [8/9] — Constraints",
+        windowTitle="Feature Tour [9/10] — Constraints",
     )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -377,13 +420,13 @@ def step_constraints():
         "\n"
         "The constraints file was passed as '-c constraints.txt'\n"
         "to pip, limiting the installable version range.",
-        windowTitle="Feature Tour [8/9] — Constraints result",
+        windowTitle="Feature Tour [9/10] — Constraints result",
     )
     step_cleanup()
 
 
 # ---------------------------------------------------------------------------
-# Step 9 — Cleanup
+# Step 10 — Cleanup
 # ---------------------------------------------------------------------------
 
 def step_cleanup():
@@ -393,7 +436,7 @@ def step_cleanup():
             "\n"
             f"scikit-image {_skimage_version_before_tour} was installed before\n"
             "the tour. We will reinstall that exact version now.",
-            windowTitle="Feature Tour [9/9] — Cleanup",
+            windowTitle="Feature Tour [10/10] — Cleanup",
         )
         _uninstall_skimage()
         slicer.util.pip_install(
@@ -406,7 +449,7 @@ def step_cleanup():
             "\n"
             "scikit-image was not installed before the tour.\n"
             "We will uninstall it to leave your environment clean.",
-            windowTitle="Feature Tour [9/9] — Cleanup",
+            windowTitle="Feature Tour [10/10] — Cleanup",
         )
         _uninstall_skimage()
 
@@ -415,7 +458,8 @@ def step_cleanup():
         "\n"
         "You have seen all the major features:\n"
         "\n"
-        "  - load_requirements() — parse requirements files\n"
+        "  - load_requirements() — parse requirements.txt files\n"
+        "  - load_pyproject_dependencies() — parse pyproject.toml\n"
         "  - pip_check() — fast requirement validation\n"
         "  - pip_install() — modal progress dialog\n"
         "  - pip_install() — non-blocking status bar mode\n"
@@ -427,7 +471,7 @@ def step_cleanup():
         "For full details, try:  help(slicer.util.pip_ensure)\n"
         "\n"
         "Thank you for reviewing PR #9010!",
-        windowTitle="Feature Tour [9/9] — Complete!",
+        windowTitle="Feature Tour [10/10] — Complete!",
     )
 
 
