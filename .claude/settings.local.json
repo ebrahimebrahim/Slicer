@@ -5,7 +5,11 @@
       "Bash(gh issue view:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr view:*)",
-      "Bash(gh search prs:*)"
+      "Bash(gh search prs:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(find:*)",
+      "WebSearch",
+      "Bash(cmake --build:*)"
     ]
   }
 }
