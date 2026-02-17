@@ -32,6 +32,14 @@ ctest -L ModuleName                 # run tests by label
 
 Tests are CTest-based. Python module tests are also invoked through CTest. Nightly results go to [slicer.cdash.org](https://slicer.cdash.org).
 
+### Python test naming in CTest
+
+Python tests are registered via `slicer_add_python_unittest()` in `CMake/SlicerMacroPythonTesting.cmake`. The CTest name is: `py_${TESTNAME_PREFIX}${script_name_without_extension}`. For example, `Base/Python/slicer/tests/test_slicer_util_pip.py` registered with `TESTNAME_PREFIX nomainwindow_` becomes `py_nomainwindow_test_slicer_util_pip`. Use `ctest -N | grep <keyword>` to find the actual test name before running.
+
+### TDD for bug fixes
+
+When fixing an identified bug, use TDD: write the test first (or revert the fix to confirm the test fails), then apply the fix and confirm the test passes. This ensures the test actually catches the bug rather than passing vacuously. Also do this for tests with heavy mocking or complex setup, where it's easy for a test to pass vacuously because the mocks aren't wired correctly. Not every test needs this treatment, but bug-fix tests and mock-heavy tests definitely do.
+
 ## Code Architecture
 
 ### Core layers (bottom-up)
@@ -79,6 +87,8 @@ Prefix every commit message with one of:
 - `WIP:` — Work in progress
 
 Subject line: imperative mood, <72 chars, capitalized, no trailing period.
+
+Additionally, use the `CLAUDE:` prefix for commits that won't be submitted upstream — Claude-specific artifacts, scratchwork notes, planning documents, `pr-*-notes/` files, CLAUDE.md updates, etc. Only commits with standard prefixes (ENH, BUG, etc.) get cherry-picked to branches destined for merging to main. Keep implementation changes and non-submission changes in separate commits to make cherry-picking clean.
 
 ## Code Formatting
 
