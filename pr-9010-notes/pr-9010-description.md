@@ -11,10 +11,10 @@ This PR adds new utility functions to `slicer.util` for managing Python dependen
 | `load_requirements(path)` | Load a `requirements.txt` file into `Requirement` objects |
 | `load_pyproject_dependencies(path)` | Load `[project.dependencies]` from a `pyproject.toml` file into `Requirement` objects |
 | `pip_check(req)` | Check if requirements are satisfied (pure Python, no subprocess) |
-| `pip_install(...)` | Extended with modal progress dialog, non-blocking mode, status bar feedback, and `--no-deps` support |
+| `pip_install(...)` | Extended with modal progress dialog, non-blocking mode, status bar feedback, `--no-deps` support, and `skip_packages` for selective dependency installation |
 | `pip_ensure(reqs, requester="...")` | High-level: checks, prompts, installs with progress, and offers restart if updated packages were already imported |
 
-All install functions support optional `constraints` (constraints file) and `no_deps_requirements` (packages to install with `--no-deps`) parameters.
+All install functions support optional `constraints` (constraints file), `no_deps_requirements` (packages to install with `--no-deps`), and `skip_packages` (packages to exclude from the transitive dependency tree) parameters.
 
 **Typical usage in an extension:**
 
@@ -30,6 +30,18 @@ Or, with `pyproject.toml`:
 reqs = slicer.util.load_pyproject_dependencies(self.resourcePath("pyproject.toml"))
 slicer.util.pip_ensure(reqs, requester="MyExtension")
 import my_dependency  # Now safe
+```
+
+With `skip_packages` (for extensions that need to exclude certain transitive dependencies):
+
+```python
+reqs = [Requirement("nnunetv2>=2.3")]
+skipped = slicer.util.pip_ensure(
+    reqs,
+    skip_packages=["SimpleITK", "torch", "requests"],
+    requester="SlicerNNUNet",
+)
+# skipped contains the requirement strings that were excluded
 ```
 
 **Behavior of `pip_install`:**
@@ -198,6 +210,27 @@ slicer.util.pip_install("httpx", constraints=constraints_path)
 os.unlink(constraints_path)
 ```
 
+### With skip_packages (selective dependency installation)
+
+```python
+# Install scikit-image but skip imageio (one of its dependencies)
+skipped = slicer.util.pip_install(
+    "scikit-image",
+    skip_packages=["imageio"],
+    requester="ReviewTest",
+)
+print(f"Skipped: {skipped}")
+
+# Or via pip_ensure:
+from packaging.requirements import Requirement
+reqs = [Requirement("scikit-image>=0.20")]
+skipped = slicer.util.pip_ensure(
+    reqs,
+    skip_packages=["imageio"],
+    requester="ReviewTest",
+)
+```
+
 ### PythonSlicer (command-line) usage
 
 Run this from a terminal using Slicer's PythonSlicer executable (not the Slicer Python console):
@@ -275,6 +308,21 @@ pip_install(requirements="numpy scipy", no_deps_requirements="problematic-pkg==1
 ```
 
 This also correctly handles non-blocking mode by chaining the two pip calls internally.
+
+### Why `skip_packages` parameter
+
+Multiple Slicer extensions (SlicerTotalSegmentator, SlicerNNUNet) independently implement ~70-90 lines of recursive selective-install code to install packages while excluding certain transitive dependencies. Common examples: SimpleITK (Slicer bundles a custom version), torch (must be installed via SlicerPyTorch for the correct CUDA/CPU build), and requests (already bundled, replacing it forces an unnecessary restart).
+
+The `skip_packages` parameter centralizes this logic. When provided, each package is installed with `--no-deps`, its dependency tree is walked recursively, and any package matching the skip list is excluded. Package METADATA is updated after installation so that `pip check` doesn't flag skipped packages as missing.
+
+### `skip_packages` vs `no_deps_requirements`
+
+Both are available; they serve different purposes:
+
+- **`no_deps_requirements`**: "Install these packages without any of their deps." You provide the correct deps yourself. Fast (2 pip calls), doesn't modify METADATA. Use when a specific package has broken dependency declarations.
+- **`skip_packages`**: "Install everything except these specific packages, anywhere in the dependency tree." Automatic recursive walk with METADATA scrubbing. Slower (one pip call per package). Use when you want most of a package's deps but need to exclude specific ones that Slicer provides differently.
+
+They are mutually exclusive — providing both raises `ValueError`.
 
 ### Why `pip_install` doesn't accept `list[Requirement]`
 
