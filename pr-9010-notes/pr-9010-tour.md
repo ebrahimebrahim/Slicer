@@ -66,7 +66,7 @@ def step_welcome():
         "Click OK to proceed to the next step.\n"
         "\n"
         "We will use scikit-image as a demo package throughout the tour.",
-        windowTitle="Feature Tour [1/10] — Welcome",
+        windowTitle="Feature Tour [1/11] — Welcome",
     )
     step_load_requirements()
 
@@ -86,7 +86,7 @@ def step_load_requirements():
         "are automatically skipped.\n"
         "\n"
         "We will create a temp requirements file and load it.",
-        windowTitle="Feature Tour [2/10] — load_requirements",
+        windowTitle="Feature Tour [2/11] — load_requirements",
     )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -105,7 +105,7 @@ def step_load_requirements():
     slicer.util.infoDisplay(
         f"Loaded {len(reqs)} requirements (comments and options skipped):\n"
         "\n" + "\n".join(lines),
-        windowTitle="Feature Tour [2/10] — load_requirements result",
+        windowTitle="Feature Tour [2/11] — load_requirements result",
     )
     step_load_pyproject()
 
@@ -126,7 +126,7 @@ def step_load_pyproject():
         "[project] (name, version, etc.) are not required.\n"
         "\n"
         "We will create a temp pyproject.toml and load it.",
-        windowTitle="Feature Tour [3/10] — load_pyproject_dependencies",
+        windowTitle="Feature Tour [3/11] — load_pyproject_dependencies",
     )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
@@ -148,7 +148,7 @@ def step_load_pyproject():
         "\n"
         "Same result as load_requirements — both return\n"
         "Requirement objects that work with pip_check and pip_ensure.",
-        windowTitle="Feature Tour [3/10] — load_pyproject_dependencies result",
+        windowTitle="Feature Tour [3/11] — load_pyproject_dependencies result",
     )
     step_pip_check()
 
@@ -167,7 +167,7 @@ def step_pip_check():
         "\n"
         "We will check several requirements against the current\n"
         "environment.",
-        windowTitle="Feature Tour [4/10] — pip_check",
+        windowTitle="Feature Tour [4/11] — pip_check",
     )
 
     checks = [
@@ -187,7 +187,7 @@ def step_pip_check():
     slicer.util.infoDisplay(
         "pip_check results:\n"
         "\n" + "\n\n".join(results),
-        windowTitle="Feature Tour [4/10] — pip_check results",
+        windowTitle="Feature Tour [4/11] — pip_check results",
     )
     step_install_dialog()
 
@@ -213,7 +213,7 @@ def step_install_dialog():
         "\n"
         "Click OK to install scikit-image. Try expanding the\n"
         "Details section in the progress dialog that appears!",
-        windowTitle="Feature Tour [5/10] — Progress Dialog",
+        windowTitle="Feature Tour [5/11] — Progress Dialog",
     )
 
     slicer.util.pip_install("scikit-image", requester="Feature Tour")
@@ -223,7 +223,7 @@ def step_install_dialog():
         "\n"
         "You just saw the modal progress dialog with real-time\n"
         "pip output in the Details section.",
-        windowTitle="Feature Tour [5/10] — Progress Dialog done",
+        windowTitle="Feature Tour [5/11] — Progress Dialog done",
     )
     step_nonblocking()
 
@@ -249,7 +249,7 @@ def step_nonblocking():
         "which should return True.\n"
         "\n"
         "Click OK to begin the non-blocking install.",
-        windowTitle="Feature Tour [6/10] — Status Bar Mode",
+        windowTitle="Feature Tour [6/11] — Status Bar Mode",
     )
 
     def on_complete(return_code):
@@ -279,7 +279,7 @@ def step_nonblocking():
 
 
 def _after_nonblocking(msg):
-    slicer.util.infoDisplay(msg, windowTitle="Feature Tour [6/10] — Status Bar done")
+    slicer.util.infoDisplay(msg, windowTitle="Feature Tour [6/11] — Status Bar done")
     step_pip_ensure()
 
 
@@ -304,7 +304,7 @@ def step_pip_ensure():
         "(No restart prompt this time — scikit-image was not imported.)\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [7/10] — pip_ensure",
+        windowTitle="Feature Tour [7/11] — pip_ensure",
     )
 
     reqs = [Requirement("scikit-image>=0.20")]
@@ -322,7 +322,7 @@ def step_pip_ensure():
         "Calling pip_ensure again now would be instant — pip_check\n"
         "sees that scikit-image is already installed and skips\n"
         "everything.",
-        windowTitle="Feature Tour [7/10] — pip_ensure done",
+        windowTitle="Feature Tour [7/11] — pip_ensure done",
     )
     step_restart_prompt()
 
@@ -348,7 +348,7 @@ def step_restart_prompt():
         "the tour (do not actually restart).\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [8/10] — Restart Prompt",
+        windowTitle="Feature Tour [8/11] — Restart Prompt",
     )
 
     # Import scikit-image so it's in sys.modules
@@ -371,7 +371,7 @@ def step_restart_prompt():
         "\n"
         "This feature helps extension users know when they need to\n"
         "restart Slicer after a package update.",
-        windowTitle="Feature Tour [8/10] — Restart Prompt done",
+        windowTitle="Feature Tour [8/11] — Restart Prompt done",
     )
     step_constraints()
 
@@ -396,7 +396,7 @@ def step_constraints():
         "to < 0.25, then install it.\n"
         "\n"
         "Click OK to begin.",
-        windowTitle="Feature Tour [9/10] — Constraints",
+        windowTitle="Feature Tour [9/11] — Constraints",
     )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -420,13 +420,83 @@ def step_constraints():
         "\n"
         "The constraints file was passed as '-c constraints.txt'\n"
         "to pip, limiting the installable version range.",
-        windowTitle="Feature Tour [9/10] — Constraints result",
+        windowTitle="Feature Tour [9/11] — Constraints result",
+    )
+    step_skip_packages()
+
+
+# ---------------------------------------------------------------------------
+# Step 10 — skip_packages
+# ---------------------------------------------------------------------------
+
+def step_skip_packages():
+    _fresh_slate()
+
+    slicer.util.infoDisplay(
+        "skip_packages — Selective Dependency Installation\n"
+        "\n"
+        "pip_install() and pip_ensure() accept a skip_packages parameter.\n"
+        "\n"
+        "When provided, each package is installed individually with\n"
+        "--no-deps, and its dependency tree is walked recursively,\n"
+        "skipping any packages whose name matches the skip list.\n"
+        "Package metadata is updated so pip doesn't later try to\n"
+        "install the skipped packages.\n"
+        "\n"
+        "This replaces ~70-90 lines of boilerplate that extensions\n"
+        "like SlicerNNUNet and SlicerTotalSegmentator duplicate today.\n"
+        "\n"
+        "We will install scikit-image while skipping 'imageio'\n"
+        "(one of its dependencies).\n"
+        "\n"
+        "Click OK to begin.",
+        windowTitle="Feature Tour [10/11] — skip_packages",
+    )
+
+    skipped = slicer.util.pip_install(
+        "scikit-image",
+        skip_packages=["imageio"],
+        requester="Feature Tour (skip_packages)",
+    )
+
+    lines = [f"  {s}" for s in (skipped or [])]
+    slicer.util.infoDisplay(
+        f"Installation complete! {len(skipped or [])} package(s) skipped:\n"
+        "\n" + "\n".join(lines) + "\n"
+        "\n"
+        "The skipped packages were not installed, and their\n"
+        "Requires-Dist entries were removed from the installed\n"
+        "package metadata.\n"
+        "\n"
+        "To prove the scrub worked, we will now try installing\n"
+        "scikit-image again (without skip_packages). Since\n"
+        "scikit-image is already installed and its metadata no\n"
+        "longer lists imageio as a dependency, pip will say\n"
+        "'already satisfied' and imageio will remain absent.\n"
+        "\n"
+        "Click OK to try it.",
+        windowTitle="Feature Tour [10/11] — skip_packages result",
+    )
+
+    # Re-install scikit-image normally — should NOT pull in imageio
+    slicer.util.pip_install("scikit-image", requester="Feature Tour (verify scrub)")
+    imageio_installed = slicer.util.pip_check(Requirement("imageio"))
+
+    slicer.util.infoDisplay(
+        "Verification complete!\n"
+        "\n"
+        f"  imageio installed: {imageio_installed}\n"
+        "\n"
+        "This should be False. A normal pip_install of scikit-image\n"
+        "did not bring in imageio, because the metadata scrub removed\n"
+        "it from scikit-image's declared dependencies.",
+        windowTitle="Feature Tour [10/11] — skip_packages verified",
     )
     step_cleanup()
 
 
 # ---------------------------------------------------------------------------
-# Step 10 — Cleanup
+# Step 11 — Cleanup
 # ---------------------------------------------------------------------------
 
 def step_cleanup():
@@ -436,7 +506,7 @@ def step_cleanup():
             "\n"
             f"scikit-image {_skimage_version_before_tour} was installed before\n"
             "the tour. We will reinstall that exact version now.",
-            windowTitle="Feature Tour [10/10] — Cleanup",
+            windowTitle="Feature Tour [11/11] — Cleanup",
         )
         _uninstall_skimage()
         slicer.util.pip_install(
@@ -449,7 +519,7 @@ def step_cleanup():
             "\n"
             "scikit-image was not installed before the tour.\n"
             "We will uninstall it to leave your environment clean.",
-            windowTitle="Feature Tour [10/10] — Cleanup",
+            windowTitle="Feature Tour [11/11] — Cleanup",
         )
         _uninstall_skimage()
 
@@ -467,11 +537,12 @@ def step_cleanup():
         "  - pip_ensure() — high-level check + prompt + install\n"
         "  - pip_ensure() — restart prompt for updated imports\n"
         "  - Constraints file support\n"
+        "  - skip_packages — selective dependency installation\n"
         "\n"
         "For full details, try:  help(slicer.util.pip_ensure)\n"
         "\n"
         "Thank you for reviewing PR #9010!",
-        windowTitle="Feature Tour [10/10] — Complete!",
+        windowTitle="Feature Tour [11/11] — Complete!",
     )
 
 
