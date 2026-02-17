@@ -15,7 +15,8 @@
       "WebFetch(domain:dependency-groups.readthedocs.io)",
       "WebFetch(domain:pypi.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(uv tool run pre-commit run:*)"
+      "Bash(uv tool run pre-commit run:*)",
+      "Bash(ctest:*)"
     ]
   }
 }
