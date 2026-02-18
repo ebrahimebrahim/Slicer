@@ -216,8 +216,8 @@ with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
     f.write("charset-normalizer==3.3.2\n")
     constraints_path = f.name
 
-# Install httpx (which depends on charset-normalizer) with the constraint
-slicer.util.pip_install("httpx", constraints=constraints_path)
+# Install requests (which depends on charset-normalizer) with the constraint
+slicer.util.pip_install("requests", constraints=constraints_path)
 os.unlink(constraints_path)
 ```
 
