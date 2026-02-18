@@ -17,6 +17,7 @@ import qt
 from packaging.requirements import Requirement
 
 import slicer
+import slicer.pydeps
 
 # ---------------------------------------------------------------------------
 # Configuration — change these to try a different demo package
@@ -43,7 +44,7 @@ except _md.PackageNotFoundError:
 
 def clear_cache():
     """Purge the pip download cache so installs show real download progress."""
-    slicer.util._executePythonModule("pip", ["cache", "purge"])
+    slicer.pydeps._executePythonModule("pip", ["cache", "purge"])
 
 
 def uninstall_pkg():
@@ -85,7 +86,7 @@ def demo_loading_deps():
         f.write("\n")
         path = f.name
 
-    reqs = slicer.util.load_requirements(path)
+    reqs = slicer.pydeps.load_requirements(path)
     os.unlink(path)
 
     lines = [f"  {r.name}  {r.specifier}" for r in reqs]
@@ -101,7 +102,7 @@ def demo_loading_deps():
         f.write("]\n")
         path = f.name
 
-    reqs2 = slicer.util.load_pyproject_dependencies(path)
+    reqs2 = slicer.pydeps.load_pyproject_dependencies(path)
     os.unlink(path)
 
     lines2 = [f"  {r.name}  {r.specifier}" for r in reqs2]
@@ -142,7 +143,7 @@ def demo_checking_reqs():
     results = []
     for spec, desc in checks:
         req = Requirement(spec)
-        ok = slicer.util.pip_check(req)
+        ok = slicer.pydeps.pip_check(req)
         mark = "SATISFIED" if ok else "NOT satisfied"
         results.append(f"  [{mark}]  {spec}\n      {desc}")
 
@@ -208,7 +209,7 @@ def demo_install_progress():
 
     # Check in-progress flag shortly after starting
     qt.QTimer.singleShot(500, lambda: print(
-        f"[Tour] isPipInstallInProgress() = {slicer.util.isPipInstallInProgress()}"
+        f"[Tour] isPipInstallInProgress() = {slicer.pydeps.isPipInstallInProgress()}"
     ))
 
     loop.exec_()
@@ -239,7 +240,7 @@ def demo_smart_install():
     )
 
     reqs = [Requirement(f"{DEMO_PACKAGE}>=0.20")]
-    slicer.util.pip_ensure(reqs, requester="Feature Tour")
+    slicer.pydeps.pip_ensure(reqs, requester="Feature Tour")
 
     slicer.util.infoDisplay(
         "pip_ensure done. Calling it again would be instant — pip_check\n"
@@ -259,7 +260,7 @@ def demo_smart_install():
     uninstall_pkg()
     clear_cache()
 
-    slicer.util.pip_ensure(reqs, requester="Feature Tour (restart demo)")
+    slicer.pydeps.pip_ensure(reqs, requester="Feature Tour (restart demo)")
 
     slicer.util.infoDisplay(
         "Restart prompt demonstrated.\n"
@@ -321,7 +322,7 @@ def demo_advanced_options():
 
     # Verify the metadata scrub: re-install normally, check the skipped dep
     slicer.util.pip_install(DEMO_PACKAGE, requester="Feature Tour (verify scrub)")
-    dep_installed = slicer.util.pip_check(Requirement(DEMO_SKIP_DEP))
+    dep_installed = slicer.pydeps.pip_check(Requirement(DEMO_SKIP_DEP))
 
     slicer.util.infoDisplay(
         f"Skipped {len(skipped or [])} package(s).\n"
@@ -359,7 +360,7 @@ def do_cleanup():
 
     slicer.util.infoDisplay(
         "Tour complete! For full API docs:\n"
-        "  help(slicer.util.pip_ensure)",
+        "  help(slicer.pydeps.pip_ensure)",
         windowTitle="Feature Tour — Done",
     )
 

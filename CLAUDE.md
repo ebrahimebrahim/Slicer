@@ -99,6 +99,16 @@ Enforced via pre-commit hooks (`.pre-commit-config.yaml`):
 
 Run `pre-commit run --all-files` to check formatting locally.
 
+## Building Documentation
+
+Build docs locally from the source tree root using `uv`:
+
+```bash
+uvx --from sphinx --with-requirements requirements-docs.txt sphinx-build -b html Docs Docs/_build/html
+```
+
+Set `EXCLUDE_API_REFERENCE=True` to skip CLI API reference generation for faster iteration.
+
 ## Developer Setup
 
 Run `Utilities/SetupForDevelopment.sh` after cloning to configure git hooks and settings.
