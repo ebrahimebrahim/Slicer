@@ -16,7 +16,9 @@
       "WebFetch(domain:pypi.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(uv tool run pre-commit run:*)",
-      "Bash(ctest:*)"
+      "Bash(ctest:*)",
+      "Bash(echo:*)",
+      "Bash(ls:*)"
     ]
   }
 }
