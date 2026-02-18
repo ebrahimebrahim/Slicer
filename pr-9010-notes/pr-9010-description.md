@@ -2,41 +2,47 @@
 
 ## Summary
 
-This PR adds new utility functions to `slicer.util` for managing Python dependencies in Slicer extensions. The goal is to provide a standardized, user-friendly way to check, prompt for, and install Python packages.
+This PR introduces a new `slicer.pydeps` module for managing Python dependencies in Slicer extensions. The goal is to provide a standardized, user-friendly way to check, prompt for, and install Python packages. The existing `slicer.util.pip_install` and `slicer.util.pip_uninstall` functions are retained as backward-compatible wrappers that delegate to `slicer.pydeps`.
 
 **New/updated functions:**
 
 | Function | Purpose |
 |----------|---------|
-| `load_requirements(path)` | Load a `requirements.txt` file into `Requirement` objects |
-| `load_pyproject_dependencies(path)` | Load `[project.dependencies]` from a `pyproject.toml` file into `Requirement` objects |
-| `pip_check(req)` | Check if requirements are satisfied (pure Python, no subprocess) |
-| `pip_install(...)` | Extended with modal progress dialog, non-blocking mode, status bar feedback, `--no-deps` support, and `skip_packages` for selective dependency installation |
-| `pip_ensure(reqs, requester="...")` | High-level: checks, prompts, installs with progress, and offers restart if updated packages were already imported |
+| `slicer.pydeps.load_requirements(path)` | Load a `requirements.txt` file into `Requirement` objects |
+| `slicer.pydeps.load_pyproject_dependencies(path)` | Load `[project.dependencies]` from a `pyproject.toml` file into `Requirement` objects |
+| `slicer.pydeps.pip_check(req)` | Check if requirements are satisfied (pure Python, no subprocess) |
+| `slicer.pydeps.pip_install(...)` | Canonical home; extended with modal progress dialog, non-blocking mode, status bar feedback, `--no-deps` support, and `skip_packages` for selective dependency installation. Also available as `slicer.util.pip_install` (backward-compatible wrapper) |
+| `slicer.pydeps.pip_ensure(reqs, requester="...")` | High-level: checks, prompts, installs with progress, and offers restart if updated packages were already imported |
 
 All install functions support optional `constraints` (constraints file), `no_deps_requirements` (packages to install with `--no-deps`), and `skip_packages` (packages to exclude from the transitive dependency tree) parameters.
 
 **Typical usage in an extension:**
 
 ```python
-reqs = slicer.util.load_requirements(self.resourcePath("requirements.txt"))
-slicer.util.pip_ensure(reqs, requester="MyExtension")
+import slicer.pydeps
+
+reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
+slicer.pydeps.pip_ensure(reqs, requester="MyExtension")
 import my_dependency  # Now safe
 ```
 
 Or, with `pyproject.toml`:
 
 ```python
-reqs = slicer.util.load_pyproject_dependencies(self.resourcePath("pyproject.toml"))
-slicer.util.pip_ensure(reqs, requester="MyExtension")
+import slicer.pydeps
+
+reqs = slicer.pydeps.load_pyproject_dependencies(self.resourcePath("pyproject.toml"))
+slicer.pydeps.pip_ensure(reqs, requester="MyExtension")
 import my_dependency  # Now safe
 ```
 
 With `skip_packages` (for extensions that need to exclude certain transitive dependencies):
 
 ```python
+import slicer.pydeps
+
 reqs = [Requirement("nnunetv2>=2.3")]
-skipped = slicer.util.pip_ensure(
+skipped = slicer.pydeps.pip_ensure(
     reqs,
     skip_packages=["SimpleITK", "torch", "requests"],
     requester="SlicerNNUNet",
@@ -55,8 +61,9 @@ Four operating modes:
 
 ## Changes
 
-- **Base/Python/slicer/util.py** — New functions and non-blocking infrastructure
-- **Base/Python/slicer/tests/test_slicer_util_pip.py** — Unit tests
+- **Base/Python/slicer/pydeps.py** — New module: `load_requirements`, `load_pyproject_dependencies`, `pip_check`, `pip_ensure`, `pip_install`, `pip_uninstall`, and non-blocking infrastructure
+- **Base/Python/slicer/util.py** — Backward-compatible wrappers (`pip_install`, `pip_uninstall`) that delegate to `slicer.pydeps`
+- **Base/Python/slicer/tests/test_slicer_pydeps.py** — Unit tests
 - **Docs/** — Updated `python_faq.md` and `script_repository/gui.md`
 
 ---
@@ -64,7 +71,11 @@ Four operating modes:
 <details>
 <summary><strong>Testing Snippets (click to expand)</strong></summary>
 
-Convenient snippets to quickly try things:
+Convenient snippets to quickly try things. First, run this once in the Python console:
+
+```python
+import slicer.pydeps
+```
 
 ### load_requirements
 
@@ -73,7 +84,7 @@ import tempfile, os
 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
     f.write("numpy>=1.20\npandas>=2.0\nscipy\n")
     path = f.name
-reqs = slicer.util.load_requirements(path)
+reqs = slicer.pydeps.load_requirements(path)
 print([f"{r.name}: {r.specifier}" for r in reqs])
 os.unlink(path)
 ```
@@ -86,7 +97,7 @@ with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
     f.write("[project]\ndependencies = [\n")
     f.write('    "numpy>=1.20",\n    "pandas>=2.0",\n    "scipy",\n]\n')
     path = f.name
-reqs = slicer.util.load_pyproject_dependencies(path)
+reqs = slicer.pydeps.load_pyproject_dependencies(path)
 print([f"{r.name}: {r.specifier}" for r in reqs])
 os.unlink(path)
 ```
@@ -97,16 +108,16 @@ os.unlink(path)
 from packaging.requirements import Requirement
 
 # Check bundled package
-slicer.util.pip_check(Requirement("numpy>=1.0"))  # True
+slicer.pydeps.pip_check(Requirement("numpy>=1.0"))  # True
 
 # Unsatisfiable version
-slicer.util.pip_check(Requirement("numpy>=99999.0"))  # False
+slicer.pydeps.pip_check(Requirement("numpy>=99999.0"))  # False
 
 # Package not installed
-slicer.util.pip_check(Requirement("nonexistent-package-xyz"))  # False
+slicer.pydeps.pip_check(Requirement("nonexistent-package-xyz"))  # False
 
 # Marker that doesn't apply (always satisfied)
-slicer.util.pip_check(Requirement("foo; sys_platform == 'nonexistent'"))  # True
+slicer.pydeps.pip_check(Requirement("foo; sys_platform == 'nonexistent'"))  # True
 ```
 
 ### pip_install with progress dialog (default)
@@ -155,13 +166,13 @@ slicer.util.pip_install("--help", blocking=False, show_progress=False, logCallba
 
 ```python
 slicer.util.pip_install("scikit-image", blocking=False, requester="ReviewTest")
-print(slicer.util.isPipInstallInProgress())  # probably True
+print(slicer.pydeps.isPipInstallInProgress())  # probably True
 ```
 
 versus just this:
 
 ```python
-print(slicer.util.isPipInstallInProgress())  # False
+print(slicer.pydeps.isPipInstallInProgress())  # False
 ```
 
 ### pip_ensure
@@ -171,11 +182,11 @@ from packaging.requirements import Requirement
 
 # With prompt dialog
 reqs = [Requirement("charset-normalizer>=3.0")]
-slicer.util.pip_ensure(reqs, requester="ReviewTest") # Does nothing if already installed, try uninstalling first to see it do an install: slicer.util.pip_uninstall("charset-normalizer")
+slicer.pydeps.pip_ensure(reqs, requester="ReviewTest") # Does nothing if already installed, try uninstalling first to see it do an install: slicer.util.pip_uninstall("charset-normalizer")
 
 
 # Without install prompt (doesn't ask for confirmation whether you want to install)
-slicer.util.pip_ensure(reqs, prompt_install=False, requester="ReviewTest") # Does nothing if already installed, try uninstalling first to see it do an install: slicer.util.pip_uninstall("charset-normalizer")
+slicer.pydeps.pip_ensure(reqs, prompt_install=False, requester="ReviewTest") # Does nothing if already installed, try uninstalling first to see it do an install: slicer.util.pip_uninstall("charset-normalizer")
 ```
 
 ### pip_ensure restart prompt
@@ -189,11 +200,11 @@ import numpy  # Ensure numpy is in sys.modules
 # Reinstall numpy (already imported) — should trigger restart prompt
 slicer.util.pip_uninstall("numpy")
 reqs = [Requirement("numpy>=1.0")]
-slicer.util.pip_ensure(reqs, requester="ReviewTest")
+slicer.pydeps.pip_ensure(reqs, requester="ReviewTest")
 # A "Restart Recommended" dialog should appear because numpy was already imported
 ```
 
-To disable the restart prompt: `slicer.util.pip_ensure(reqs, prompt_restart=False)`
+To disable the restart prompt: `slicer.pydeps.pip_ensure(reqs, prompt_restart=False)`
 
 ### With constraints file
 
@@ -224,7 +235,7 @@ print(f"Skipped: {skipped}")
 # Or via pip_ensure:
 from packaging.requirements import Requirement
 reqs = [Requirement("scikit-image>=0.20")]
-skipped = slicer.util.pip_ensure(
+skipped = slicer.pydeps.pip_ensure(
     reqs,
     skip_packages=["imageio"],
     requester="ReviewTest",
@@ -236,7 +247,7 @@ skipped = slicer.util.pip_ensure(
 Run this from a terminal using Slicer's PythonSlicer executable (not the Slicer Python console):
 
 ```bash
-/path/to/PythonSlicer -c "import slicer.util; slicer.util.pip_install('charset-normalizer')"
+/path/to/PythonSlicer -c "import slicer.pydeps; slicer.pydeps.pip_install('charset-normalizer')"
 ```
 
 This verifies that `pip_install` works in the PythonSlicer environment where `slicer.app` and Qt are not available. The function automatically falls back to simple blocking mode.
@@ -267,7 +278,7 @@ Installing is not done frequently, but _checking_ may be called frequently. A pu
 We considered [LazyImportGroup](https://github.com/Slicer/Slicer/issues/7707) which intercepts first use of imports to trigger installation. It is elegant, but it reduces transparency and makes debugging harder for extension developers. For now we get this pattern which has more boilerplate but is more transparent and simple to debug:
 
 ```python
-slicer.util.pip_ensure(reqs, requester="MyExtension")
+slicer.pydeps.pip_ensure(reqs, requester="MyExtension")
 import my_dependency  # Explicit, debuggable
 ```
 
@@ -326,17 +337,39 @@ They are mutually exclusive — providing both raises `ValueError`.
 
 ### Why `pip_install` doesn't accept `list[Requirement]`
 
-It would feel natural to write `pip_install(load_requirements("requirements.txt"))`. The fact that you can't is a little unfortunate — it looks like it *should* work. But `pip_install` is the one function in this PR that is extremely widely used in the wild, and we don't want to make breaking changes to its signature. It's also a low-level function that mirrors the pip CLI, taking the same kind of string arguments you'd pass on the command line, so it makes sense to leave it working the way it does.
+It would feel natural to write `pip_install(load_requirements("requirements.txt"))`. The fact that you can't is a little unfortunate — it looks like it *should* work. But `pip_install` is extremely widely used in the wild (via `slicer.util.pip_install`), and we don't want to make breaking changes to its signature. It's also a low-level function that mirrors the pip CLI, taking the same kind of string arguments you'd pass on the command line, so it makes sense to leave it working the way it does.
 
-The new structured `list[Requirement]` input type goes into the new functions instead: `pip_check` and `pip_ensure`. In practice, `pip_ensure(load_requirements("requirements.txt"))` is the call you want anyway-- it checks what's already installed, prompts the user, installs only what's missing, and detects whether a restart is needed. So accepting `Requirement` objects at the `pip_ensure` level rather than the `pip_install` level steers developers toward the safer, idempotent workflow.
+The new structured `list[Requirement]` input type goes into the new `slicer.pydeps` functions instead: `pip_check` and `pip_ensure`. In practice, `slicer.pydeps.pip_ensure(load_requirements("requirements.txt"))` is the call you want anyway -- it checks what's already installed, prompts the user, installs only what's missing, and detects whether a restart is needed. So accepting `Requirement` objects at the `pip_ensure` level rather than the `pip_install` level steers developers toward the safer, idempotent workflow.
 
 ### Why `pip_` function naming
 
-The new functions follow the existing naming convention established by `slicer.util.pip_install` and `slicer.util.pip_uninstall`. This provides a consistent, discoverable API where all pip-related utilities share the `pip_` prefix.
+The new functions follow the existing naming convention established by `slicer.util.pip_install` and `slicer.util.pip_uninstall`. All pip-related functions now live together in `slicer.pydeps` with the `pip_` prefix, providing a consistent, discoverable API.
+
+### Why `slicer.pydeps` (module naming)
+
+The new module needed a name that (1) clearly conveys its purpose, (2) doesn't collide with existing packages in the Python ecosystem, and (3) works within Slicer's Python environment.
+
+**`slicer.packaging` was the initial choice** — it's descriptive and mirrors the well-known third-party `packaging` library. However, Slicer's Python environment adds the `slicer/` directory itself to `sys.path` (i.e., `<build>/bin/Python/slicer/` is a path entry). This means a file named `slicer/packaging.py` shadows the third-party `packaging` library for any top-level `from packaging import ...` statement, breaking imports of `packaging.requirements`, `packaging.markers`, etc.
+
+**`slicer.dependencies`** was considered, but in a codebase where half the stack is C++ with its own dependency tree (VTK, ITK, Qt, CTK), the unqualified "dependencies" is ambiguous.
+
+**`slicer.pydeps`** was chosen because:
+- The `py` prefix immediately scopes it to *Python* dependencies, which is what this module manages
+- It's short (6 characters, comparable to `util`) and easy to type
+- No collision with any stdlib module or common PyPI package
+- Reads naturally: `slicer.pydeps.pip_ensure(...)`, `slicer.pydeps.load_requirements(...)`
+
+### Why `import slicer.pydeps` is explicit
+
+`slicer.util` is auto-imported at startup (via `from slicer.util import *` in `slicerqt.py`), so `slicer.util.pip_install(...)` works without an explicit import. We intentionally did *not* do the same for `slicer.pydeps`.
+
+`slicer.util` gets away with auto-import because its top-level imports are all stdlib — the heavy dependencies (`qt`, `ctk`, `slicer.app`) are lazy imports inside function bodies, so the startup cost is essentially zero. `slicer.pydeps` is different: it uses proper top-level imports for `packaging.markers`, `packaging.requirements`, `importlib.metadata`, etc. These are lightweight individually, but there's no reason for every Slicer session to pay that cost when most sessions never install a Python package.
+
+The tradeoff is worth it. Top-level imports in `slicer.pydeps` make the module easier to read, ensure import errors surface immediately rather than hiding inside deeply nested call stacks, and follow standard Python conventions. The cost is one `import slicer.pydeps` line in extension code that uses the new API — a trivial ask. And for the common case of `slicer.util.pip_install(...)`, no explicit import is needed because the wrapper does its own lazy import internally.
 
 ### Why `pip_uninstall` was also modified
 
-While the focus of this work is on dependency installation, `pip_uninstall` was updated with the same non-blocking parameters (`blocking`, `logCallback`, `completedCallback`) for API consistency. Since both functions share the same underlying infrastructure (`launchConsoleProcess` and `_executePythonModule`), extending non-blocking support to `pip_uninstall` required minimal additional code and ensures users have a symmetric API for both operations.
+While the focus of this work is on dependency installation, `pip_uninstall` was updated with the same non-blocking parameters (`blocking`, `logCallback`, `completedCallback`) for API consistency. Since both functions share the same underlying infrastructure (`launchConsoleProcess` and `_executePythonModule`) in `slicer.pydeps`, extending non-blocking support to `pip_uninstall` required minimal additional code and ensures users have a symmetric API for both operations.
 
 ### Non-blocking implementation
 
@@ -364,6 +397,7 @@ import qt
 from packaging.requirements import Requirement
 
 import slicer
+import slicer.pydeps
 
 # ---------------------------------------------------------------------------
 # Configuration — change these to try a different demo package
@@ -390,7 +424,7 @@ except _md.PackageNotFoundError:
 
 def clear_cache():
     """Purge the pip download cache so installs show real download progress."""
-    slicer.util._executePythonModule("pip", ["cache", "purge"])
+    slicer.pydeps._executePythonModule("pip", ["cache", "purge"])
 
 
 def uninstall_pkg():
@@ -432,7 +466,7 @@ def demo_loading_deps():
         f.write("\n")
         path = f.name
 
-    reqs = slicer.util.load_requirements(path)
+    reqs = slicer.pydeps.load_requirements(path)
     os.unlink(path)
 
     lines = [f"  {r.name}  {r.specifier}" for r in reqs]
@@ -448,7 +482,7 @@ def demo_loading_deps():
         f.write("]\n")
         path = f.name
 
-    reqs2 = slicer.util.load_pyproject_dependencies(path)
+    reqs2 = slicer.pydeps.load_pyproject_dependencies(path)
     os.unlink(path)
 
     lines2 = [f"  {r.name}  {r.specifier}" for r in reqs2]
@@ -489,7 +523,7 @@ def demo_checking_reqs():
     results = []
     for spec, desc in checks:
         req = Requirement(spec)
-        ok = slicer.util.pip_check(req)
+        ok = slicer.pydeps.pip_check(req)
         mark = "SATISFIED" if ok else "NOT satisfied"
         results.append(f"  [{mark}]  {spec}\n      {desc}")
 
@@ -555,7 +589,7 @@ def demo_install_progress():
 
     # Check in-progress flag shortly after starting
     qt.QTimer.singleShot(500, lambda: print(
-        f"[Tour] isPipInstallInProgress() = {slicer.util.isPipInstallInProgress()}"
+        f"[Tour] isPipInstallInProgress() = {slicer.pydeps.isPipInstallInProgress()}"
     ))
 
     loop.exec_()
@@ -586,7 +620,7 @@ def demo_smart_install():
     )
 
     reqs = [Requirement(f"{DEMO_PACKAGE}>=0.20")]
-    slicer.util.pip_ensure(reqs, requester="Feature Tour")
+    slicer.pydeps.pip_ensure(reqs, requester="Feature Tour")
 
     slicer.util.infoDisplay(
         "pip_ensure done. Now we will call it again immediately.\n"
@@ -596,7 +630,7 @@ def demo_smart_install():
         windowTitle="Demo 4a: pip_ensure — done",
     )
 
-    slicer.util.pip_ensure(reqs, requester="Feature Tour (no-op)")
+    slicer.pydeps.pip_ensure(reqs, requester="Feature Tour (no-op)")
 
     slicer.util.infoDisplay(
         "pip_ensure returned instantly — nothing to install.\n"
@@ -615,7 +649,7 @@ def demo_smart_install():
     uninstall_pkg()
     clear_cache()
 
-    slicer.util.pip_ensure(reqs, requester="Feature Tour (restart demo)")
+    slicer.pydeps.pip_ensure(reqs, requester="Feature Tour (restart demo)")
 
     slicer.util.infoDisplay(
         "Restart prompt demonstrated.\n"
@@ -684,7 +718,7 @@ def demo_advanced_options():
 
     # Verify the metadata scrub: re-install normally, check the skipped dep
     slicer.util.pip_install(DEMO_PACKAGE, requester="Feature Tour (verify scrub)")
-    dep_installed = slicer.util.pip_check(Requirement(DEMO_SKIP_DEP))
+    dep_installed = slicer.pydeps.pip_check(Requirement(DEMO_SKIP_DEP))
 
     slicer.util.infoDisplay(
         f"Skipped {len(skipped or [])} package(s).\n"
@@ -722,7 +756,7 @@ def do_cleanup():
 
     slicer.util.infoDisplay(
         "Tour complete! For full API docs:\n"
-        "  help(slicer.util.pip_ensure)",
+        "  help(slicer.pydeps.pip_ensure)",
         windowTitle="Feature Tour — Done",
     )
 
@@ -804,7 +838,8 @@ run_tour()
 <summary><strong>References (click to expand)</strong></summary>
 
 - This work is part of the [44th Slicer project week](https://projectweek.na-mic.org/PW44_2026_GranCanaria/Projects/PythonDependenciesInExtensions/)!
-- [#7171 — Improving Support for Python Package Dependencies in Slicer Extensions](https://github.com/Slicer/Slicer/issues/7171) — This PR implements the "runtime installation" approach described in the issue: extensions declare dependencies via `requirements.txt`, and enhanced `slicer.util` functions handle checking and installation with optional constraints file support for coordinating versions across extensions.
-- [#7707 — Allow scripted modules to declare and lazily install pip requirements](https://github.com/Slicer/Slicer/issues/7707) — Proposes a `LazyImportGroup` context manager that intercepts imports and triggers installation on first attribute access. This PR takes a simpler, more explicit approach: developers call `pip_ensure()` at the point dependencies are needed, then import normally. The explicit pattern trades some elegance for transparency and easier debugging. The `LazyImportGroup` approach could potentially be built on top of the primitives provided here (`load_requirements`, `pip_check`, `pip_install` with callbacks) if desired in the future.
+- [#7171 — Improving Support for Python Package Dependencies in Slicer Extensions](https://github.com/Slicer/Slicer/issues/7171) — This PR implements the "runtime installation" approach described in the issue: extensions declare dependencies via `requirements.txt`, and the new `slicer.pydeps` module handles checking and installation with optional constraints file support for coordinating versions across extensions.
+- [#7707 — Allow scripted modules to declare and lazily install pip requirements](https://github.com/Slicer/Slicer/issues/7707) — Proposes a `LazyImportGroup` context manager that intercepts imports and triggers installation on first attribute access. This PR takes a simpler, more explicit approach: developers call `pip_ensure()` at the point dependencies are needed, then import normally. The explicit pattern trades some elegance for transparency and easier debugging. The `LazyImportGroup` approach could potentially be built on top of the primitives provided by `slicer.pydeps` (`load_requirements`, `pip_check`, `pip_install` with callbacks) if desired in the future. See #8181.
+- At https://github.com/KitwareMedical/SlicerNNUnet/pull/21 is a demo of how some of the features here can simplify python dependency handling in the NNUnet extension.
 
 </details>
