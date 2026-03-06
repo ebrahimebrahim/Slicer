@@ -20,6 +20,17 @@ The SuperBuild first builds all dependencies (VTK, ITK, CTK, Python, etc.) then 
 
 Key CMake options: `Slicer_USE_SYSTEM_QT`, `Slicer_BUILD_CLI`, `Slicer_USE_SimpleITK`, `Slicer_USE_PYTHONQT`, `CMAKE_BUILD_TYPE`.
 
+### Python-only changes
+
+When only Python files are modified (no C++ recompilation needed), use this target to copy them into the build tree:
+
+```bash
+cd Slicer-build/Slicer-build
+cmake --build . --target CopySlicerPythonScriptFiles
+```
+
+This is much faster than a full rebuild and sufficient for iterating on Python code.
+
 ## Testing
 
 ```bash
