@@ -18,7 +18,10 @@
       "Bash(uv tool run pre-commit run:*)",
       "Bash(ctest:*)",
       "Bash(echo:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:discourse.slicer.org)",
+      "WebFetch(domain:slicer.readthedocs.io)",
+      "WebFetch(domain:gist.github.com)"
     ]
   }
 }
