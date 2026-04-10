@@ -16,11 +16,14 @@ subprocess:
 
 ```python
 import slicer.pydeps
-from packaging.requirements import Requirement
 
 # Single requirement
-if slicer.pydeps.pip_check(Requirement("scipy>=1.0")):
+if slicer.pydeps.pip_check("scipy>=1.0"):
     print("scipy is available")
+
+# Multiple requirements (space-separated)
+if slicer.pydeps.pip_check("scipy>=1.0 numpy>=1.20"):
+    print("All available")
 
 # Multiple requirements from a file
 reqs = slicer.pydeps.load_requirements("/path/to/requirements.txt")
@@ -58,11 +61,9 @@ except those specific packages:
 
 ```python
 import slicer.pydeps
-from packaging.requirements import Requirement
 
-reqs = [Requirement("nnunetv2>=2.3")]
 skipped = slicer.pydeps.pip_ensure(
-    reqs,
+    "nnunetv2>=2.3",
     skip_packages=["SimpleITK", "torch", "requests"],
     requester="SlicerNNUNet",
 )

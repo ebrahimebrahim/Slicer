@@ -254,6 +254,27 @@ class PipCheckTest(unittest.TestCase):
         """Test that empty list returns True."""
         self.assertTrue(slicer.pydeps.pip_check([]))
 
+    def test_string_single(self):
+        """Test string input with a single requirement."""
+        self.assertTrue(slicer.pydeps.pip_check("numpy>=1.0"))
+
+    def test_string_multiple(self):
+        """Test space-separated string with multiple requirements."""
+        self.assertTrue(slicer.pydeps.pip_check("numpy>=1.0 scipy>=1.0"))
+
+    def test_string_missing(self):
+        """Test string input for missing package."""
+        self.assertFalse(slicer.pydeps.pip_check("nonexistent-package-xyz123"))
+
+    def test_list_of_strings(self):
+        """Test list of string requirements."""
+        self.assertTrue(slicer.pydeps.pip_check(["numpy>=1.0", "scipy>=1.0"]))
+
+    def test_mixed_list(self):
+        """Test list mixing strings and Requirement objects."""
+        reqs = [Requirement("numpy>=1.0"), "scipy>=1.0"]
+        self.assertTrue(slicer.pydeps.pip_check(reqs))
+
 
 class PipCheckMockedTest(unittest.TestCase):
     """Tests for slicer.pydeps.pip_check using mocks for isolation."""
@@ -345,6 +366,18 @@ class PipEnsureTest(unittest.TestCase):
                 self.assertIn("nonexistent-package-xyz123>=1.0", call_args[0][0])
         else:
             self.skipTest("Not in testing mode - would show dialog")
+
+    def test_string_input_all_satisfied(self):
+        """Test that string input works when all satisfied."""
+        with unittest.mock.patch("slicer.pydeps._pip_install_simple") as mock_install:
+            slicer.pydeps.pip_ensure("numpy>=1.0", prompt_install=False)
+            mock_install.assert_not_called()
+
+    def test_string_multiple_all_satisfied(self):
+        """Test that space-separated string works when all satisfied."""
+        with unittest.mock.patch("slicer.pydeps._pip_install_simple") as mock_install:
+            slicer.pydeps.pip_ensure("numpy>=1.0 scipy>=1.0", prompt_install=False)
+            mock_install.assert_not_called()
 
 
 class PipInstallNonBlockingTest(unittest.TestCase):

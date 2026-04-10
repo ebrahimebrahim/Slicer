@@ -173,7 +173,28 @@ def load_pyproject_dependencies(path: str | Path) -> list[Requirement]:
     return [Requirement(dep) for dep in data["project"].get("dependencies", [])]
 
 
-def pip_check(req: Requirement | list[Requirement], _seen: set[tuple[str, frozenset[str]]] | None = None) -> bool:
+def _to_requirements(
+    reqs: str | Requirement | list[str | Requirement],
+) -> list[Requirement]:
+    """Normalize flexible input into a list of Requirement objects.
+
+    Accepts a single string (space-separated requirement specifiers),
+    a single Requirement, or a list of strings/Requirements.
+    """
+    if isinstance(reqs, str):
+        return [Requirement(s) for s in reqs.split()]
+    if isinstance(reqs, Requirement):
+        return [reqs]
+    if isinstance(reqs, list):
+        return [Requirement(r) if isinstance(r, str) else r for r in reqs]
+    msg = f"Expected str, Requirement, or list, got {type(reqs).__name__}"
+    raise TypeError(msg)
+
+
+def pip_check(
+    req: str | Requirement | list[str | Requirement],
+    _seen: set[tuple[str, frozenset[str]]] | None = None,
+) -> bool:
     """Check if requirement(s) are satisfied.
 
     For requirements with extras like ``package[extra1,extra2]>=1.0``, this:
@@ -186,8 +207,10 @@ def pip_check(req: Requirement | list[Requirement], _seen: set[tuple[str, frozen
     doesn't apply to the current environment, the requirement is considered
     satisfied (since it doesn't need to be installed).
 
-    :param req: Either a :class:`packaging.requirements.Requirement` object
-        or a list of Requirement objects.
+    :param req: Requirement(s) to check. Accepts a space-separated string
+        (e.g., ``"numpy>=1.20 scipy"``), a single
+        :class:`~packaging.requirements.Requirement`, or a list of strings
+        and/or Requirement objects.
     :param _seen: Internal parameter for tracking circular dependencies.
         Do not pass this parameter.
 
@@ -197,9 +220,7 @@ def pip_check(req: Requirement | list[Requirement], _seen: set[tuple[str, frozen
 
     .. code-block:: python
 
-      from packaging.requirements import Requirement
-
-      if slicer.pydeps.pip_check(Requirement("numpy>=1.20")):
+      if slicer.pydeps.pip_check("numpy>=1.20"):
           print("numpy is satisfied")
 
     """
@@ -207,10 +228,11 @@ def pip_check(req: Requirement | list[Requirement], _seen: set[tuple[str, frozen
 
     if _seen is None:
         _seen = set()
+        # Normalize flexible input types at the public entry point
+        reqs = _to_requirements(req)
+        return all(pip_check(r, _seen) for r in reqs)
 
-    # Handle list of requirements, sharing _seen across all of them
-    if isinstance(req, list):
-        return all(pip_check(r, _seen) for r in req)
+    # From here, req is a single Requirement (internal recursive call)
 
     # Check if requirement's marker applies to current environment
     # If not, consider it satisfied (doesn't need to be installed here)
@@ -347,7 +369,7 @@ def _find_updated_imported_packages(
 
 
 def pip_ensure(
-    requirements: list[Requirement],
+    requirements: str | Requirement | list[str | Requirement],
     constraints: str | Path | None = None,
     skip_packages: list[str] | None = None,
     prompt_install: bool = True,
@@ -366,16 +388,18 @@ def pip_ensure(
     current session, a restart prompt is shown (the old versions remain loaded
     in memory and may not work correctly until Slicer is restarted).
 
-    :param requirements: List of :class:`packaging.requirements.Requirement` objects,
-        typically obtained from :func:`load_requirements` or
-        :func:`load_pyproject_dependencies`.
+    :param requirements: Requirement(s) to ensure. Accepts a space-separated
+        string (e.g., ``"flywheel-sdk>=1.0 numpy"``), a single
+        :class:`~packaging.requirements.Requirement`, or a list of strings
+        and/or Requirement objects. Can also be obtained from
+        :func:`load_requirements` or :func:`load_pyproject_dependencies`.
     :param constraints: Path to a constraints file (string or Path object), or None.
         When provided, passed to pip as ``-c constraints.txt`` during installation.
         Constraints files use the same format as requirements files but only constrain
         versions without triggering installation. Useful for ensuring compatible
         versions across multiple extensions.
     :param skip_packages: Package names to exclude from installation (and from the
-        dependency tree). Forwarded to :func:`pip_install` — see its documentation
+        dependency tree). Forwarded to :func:`pip_install` -- see its documentation
         for full details.
     :param prompt_install: If True (default), show confirmation dialog before installing.
     :param prompt_restart: If True (default), check whether any updated packages were
@@ -401,27 +425,25 @@ def pip_ensure(
 
     .. code-block:: python
 
-      from typing import TYPE_CHECKING
-
-      if TYPE_CHECKING:
-          import skimage
-
       class MyFilterWidget(ScriptedLoadableModuleWidget):
 
           def onApplyButton(self):
-              reqs = slicer.pydeps.load_requirements(
-                  self.resourcePath("requirements.txt")
-              )
-              slicer.pydeps.pip_ensure(reqs, requester="MyFilter")
+              slicer.pydeps.pip_ensure("scikit-image>=0.20", requester="MyFilter")
               import skimage
 
               # Now safe to use skimage
               filtered = skimage.filters.gaussian(array, sigma=2.0)
 
+    For loading from a requirements file, use :func:`load_requirements`::
+
+      reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
+      slicer.pydeps.pip_ensure(reqs, requester="MyFilter")
+
     For more examples (constraints, skip_packages), see
     :doc:`/developer_guide/script_repository` (Python package management section).
 
     """
+    requirements = _to_requirements(requirements)
     missing = [req for req in requirements if not pip_check(req)]
 
     if not missing:

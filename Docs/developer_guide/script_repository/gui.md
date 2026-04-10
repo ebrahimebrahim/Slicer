@@ -1281,21 +1281,16 @@ The `slicer.pydeps.pip_ensure()` function handles checking, prompting, and insta
 
 ```python
 import slicer.pydeps
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import flywheel
 
 class MyModuleWidget(ScriptedLoadableModuleWidget):
 
     def onApplyButton(self):
-        # Load requirements from file (recommended for multiple dependencies)
-        reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
-        slicer.pydeps.pip_ensure(reqs, requester="MyModule")
+        # For a single package (or space-separated list):
+        slicer.pydeps.pip_ensure("flywheel-sdk>=1.0", requester="MyModule")
 
-        # Or for a single package:
-        # from packaging.requirements import Requirement
-        # slicer.pydeps.pip_ensure([Requirement("flywheel-sdk>=1.0")], requester="MyModule")
+        # Or load requirements from file (recommended for multiple dependencies):
+        # reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
+        # slicer.pydeps.pip_ensure(reqs, requester="MyModule")
 
         import flywheel
         # Now safe to use flywheel
