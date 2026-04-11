@@ -33,6 +33,7 @@ from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
+from slicer.i18n import tr as _
 from slicer.util import launchConsoleProcess, logProcessOutput
 
 if TYPE_CHECKING:
@@ -468,13 +469,21 @@ def pip_ensure(
 
     if prompt_install:
         package_list = "\n".join(f"- {req}" for req in missing)
-        title = f"{requester} - Install Python Packages" if requester else "Install Python Packages"
+        if requester:
+            title = _("{requester} - Install Python Packages").format(requester=requester)
+        else:
+            title = _("Install Python Packages")
         count = len(missing)
-        message = (
-            f"{count} Python package{'s' if count != 1 else ''} "
-            f"need{'s' if count == 1 else ''} to be installed.\n\n"
-            f"This will modify Slicer's Python environment. Continue?"
-        )
+        if count == 1:
+            message = _(
+                "1 Python package needs to be installed.\n\n"
+                "This will modify Slicer's Python environment. Continue?",
+            )
+        else:
+            message = _(
+                "{count} Python packages need to be installed.\n\n"
+                "This will modify Slicer's Python environment. Continue?",
+            ).format(count=count)
         if not slicer.util.confirmOkCancelDisplay(message, title, detailedText=package_list):
             raise RuntimeError("User declined package installation")
 
@@ -513,17 +522,22 @@ def pip_ensure(
         # rely on the log message above for test verification.
         if not slicer.app.testingEnabled():
             count = len(updated_imported)
-            title = (
-                f"{requester} - Restart Recommended"
-                if requester
-                else "Restart Recommended"
-            )
-            message = (
-                f"{count} updated package{'s' if count != 1 else ''} "
-                f"{'were' if count != 1 else 'was'} already loaded in memory "
-                f"and may not work correctly until Slicer is restarted.\n\n"
-                f"Would you like to restart now?"
-            )
+            if requester:
+                title = _("{requester} - Restart Recommended").format(requester=requester)
+            else:
+                title = _("Restart Recommended")
+            if count == 1:
+                message = _(
+                    "1 updated package was already loaded in memory "
+                    "and may not work correctly until Slicer is restarted.\n\n"
+                    "Would you like to restart now?",
+                )
+            else:
+                message = _(
+                    "{count} updated packages were already loaded in memory "
+                    "and may not work correctly until Slicer is restarted.\n\n"
+                    "Would you like to restart now?",
+                ).format(count=count)
             if slicer.util.confirmYesNoDisplay(
                 message, title, detailedText=detail_text,
             ):
@@ -796,8 +810,8 @@ def _pip_install_with_dialog(
 
     if result["returnCode"] != 0:
         slicer.util.errorDisplay(
-            "Package installation failed.",
-            windowTitle=f"{requester} - Installation Failed" if requester else "Installation Failed",
+            _("Package installation failed."),
+            windowTitle=_("{requester} - Installation Failed").format(requester=requester) if requester else _("Installation Failed"),
             detailedText=result["log"],
         )
         raise CalledProcessError(result["returnCode"], "pip install")
@@ -1199,9 +1213,12 @@ class _PipProgressDialog:
 
         self._dialog = qt.QDialog(parent or slicer.util.mainWindow())
         self._dialog.setModal(True)
-        self._dialog.setWindowTitle(
-            f"{requester} - Installing Python Packages" if requester else "Installing Python Packages",
-        )
+        if requester:
+            self._dialog.setWindowTitle(
+                _("{requester} - Installing Python Packages").format(requester=requester),
+            )
+        else:
+            self._dialog.setWindowTitle(_("Installing Python Packages"))
         # Prevent closing via X button
         self._dialog.setWindowFlags(self._dialog.windowFlags() & ~qt.Qt.WindowCloseButtonHint)
 
@@ -1212,7 +1229,7 @@ class _PipProgressDialog:
         layout = qt.QVBoxLayout(self._dialog)
 
         # Status label
-        self.statusLabel = qt.QLabel("Installing packages...")
+        self.statusLabel = qt.QLabel(_("Installing packages..."))
         layout.addWidget(self.statusLabel)
 
         # Indeterminate progress bar
@@ -1222,7 +1239,7 @@ class _PipProgressDialog:
 
         # Collapsible details section
         self.detailsButton = ctk.ctkCollapsibleButton()
-        self.detailsButton.text = "Details"
+        self.detailsButton.text = _("Details")
         self.detailsButton.collapsed = True
         detailsLayout = qt.QVBoxLayout(self.detailsButton)
 
