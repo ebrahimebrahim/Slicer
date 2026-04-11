@@ -845,7 +845,7 @@ class PipEnsureRestartPromptTest(unittest.TestCase):
 class GetInstalledVersionsSubprocessTest(unittest.TestCase):
     """Test that _get_installed_versions sees packages installed by a pip subprocess.
 
-    Uses pip-install-test — a minimal stub package on PyPI specifically
+    Uses pip-install-test -- a minimal stub package on PyPI specifically
     designed for testing pip installs.
     """
 

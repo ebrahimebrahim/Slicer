@@ -6,10 +6,10 @@ functionality.
 
 **Key functions:**
 
-- :func:`load_requirements` / :func:`load_pyproject_dependencies` — parse dependency files
-- :func:`pip_check` — check if requirements are satisfied (pure Python, no subprocess)
-- :func:`pip_ensure` — high-level: check, prompt, install, restart detection
-- :func:`pip_install` / :func:`pip_uninstall` — install/uninstall packages
+- :func:`load_requirements` / :func:`load_pyproject_dependencies` -- parse dependency files
+- :func:`pip_check` -- check if requirements are satisfied (pure Python, no subprocess)
+- :func:`pip_ensure` -- high-level: check, prompt, install, restart detection
+- :func:`pip_install` / :func:`pip_uninstall` -- install/uninstall packages
 
 For backward compatibility, :func:`pip_install` and :func:`pip_uninstall` are also
 available as ``slicer.util.pip_install`` and ``slicer.util.pip_uninstall``.
@@ -339,7 +339,7 @@ def _find_updated_imported_packages(
         that have import names present in ``sys.modules`` and either changed version
         or were freshly installed (``old_version`` is ``None`` in that case).
     """
-    # Reverse mapping: canonical dist name → set of top-level import names
+    # Reverse mapping: canonical dist name -> set of top-level import names
     dist_to_imports: dict[str, set[str]] = {}
     for import_name, dist_names in importlib.metadata.packages_distributions().items():
         for dn in dist_names:
@@ -467,7 +467,7 @@ def pip_ensure(
         return None
 
     if prompt_install:
-        package_list = "\n".join(f"• {req}" for req in missing)
+        package_list = "\n".join(f"- {req}" for req in missing)
         title = f"{requester} - Install Python Packages" if requester else "Install Python Packages"
         count = len(missing)
         message = (
@@ -500,7 +500,7 @@ def pip_ensure(
 
     if updated_imported:
         detail_lines = [
-            f"• {name}: {old_ver} → {new_ver}" if old_ver else f"• {name}: (reinstalled) → {new_ver}"
+            f"- {name}: {old_ver} -> {new_ver}" if old_ver else f"- {name}: (reinstalled) -> {new_ver}"
             for name, old_ver, new_ver in updated_imported
         ]
         detail_text = "\n".join(detail_lines)
@@ -981,7 +981,7 @@ def _pip_install_with_skips(
     """Install packages while skipping named packages from the dependency tree.
 
     Each package is installed with ``--no-deps``, and its dependencies (and
-    their dependencies, recursively) are also installed — except for packages
+    their dependencies, recursively) are also installed -- except for packages
     in *skip_packages*. Package metadata is updated after each install so that
     pip does not later try to install the skipped packages.
 
@@ -1039,7 +1039,7 @@ def _pip_install_with_skips(
 
         # Install with --no-deps
         _log(f"Installing {req.name}...")
-        # Strip the marker — we already evaluated it above, and passing it
+        # Strip the marker -- we already evaluated it above, and passing it
         # through as a string would be mangled by shlex.split in _build_pip_args.
         extras_str = f"[{','.join(req.extras)}]" if req.extras else ""
         install_str = f"{req.name}{extras_str}{req.specifier}"
@@ -1053,7 +1053,7 @@ def _pip_install_with_skips(
         except importlib.metadata.PackageNotFoundError:
             sub_deps = []
 
-        # Scrub METADATA before recursing — if the walk is interrupted,
+        # Scrub METADATA before recursing -- if the walk is interrupted,
         # the METADATA for already-installed packages is still cleaned.
         if skip_set:
             _scrub_metadata(canonical, skip_set)
