@@ -53,11 +53,30 @@ slicer.pydeps.pip_ensure(
 slicer.util.pip_install("pandas scipy", constraints="/path/to/constraints.txt")
 ```
 
-### Install packages while skipping specific dependencies
+### Install packages with broken dependency declarations
 
-Some packages pull in transitive dependencies that conflict with Slicer's bundled
-libraries (e.g., SimpleITK, torch). Use `skip_packages` to install everything
-except those specific packages:
+When a package declares overly strict dependencies that conflict with other packages,
+use `no_deps_requirements` to install it without its declared dependencies, then
+install the actual dependencies you need separately:
+
+```python
+slicer.util.pip_install(
+    requirements="numpy scipy",
+    no_deps_requirements="problematic-pkg==1.0",
+)
+```
+
+### Excluding specific transitive dependencies (`skip_packages`)
+
+`skip_packages` installs each requirement with `--no-deps`, walks its dependency
+tree recursively, and excludes any package matching the skip list. Package METADATA
+is scrubbed afterward so pip will not flag the skipped packages as missing.
+
+It exists for the specific case where a package pulls in a transitive dependency
+that Slicer already provides differently, such as `SimpleITK` (Slicer bundles a
+custom build) or `torch` (must come from SlicerPyTorch for the correct CUDA/CPU
+combination). Without `skip_packages`, installing such a package would overwrite
+or conflict with Slicer's bundled version.
 
 ```python
 import slicer.pydeps
@@ -71,32 +90,22 @@ skipped = slicer.pydeps.pip_ensure(
 # e.g. ["torch>=2.0", "SimpleITK>=2.0.2", "requests"]
 ```
 
-:::{note}
-**Choosing between `skip_packages` and `no_deps_requirements`:**
+:::{warning}
+`skip_packages` is a workaround, not a recommended pattern. It hides
+unwanted requirements from pip, which means real conflicts are no longer
+reported and `pip show` no longer reflects the true dependency graph.
+Skip lists also drift over time as Slicer's bundled packages change.
 
-- Use `skip_packages` when you want all of a package's dependencies installed
-  automatically except for specific packages already provided by Slicer.
-  It walks the dependency tree recursively and scrubs package metadata so
-  pip won't try to install the skipped packages later.
-- Use `no_deps_requirements` when a package has broken dependency declarations
-  and you want to provide the correct dependencies yourself. It is faster
-  (2 pip calls) and does not modify package metadata.
+Where possible, consider asking the upstream maintainer to relax the
+unnecessary requirement, or use `no_deps_requirements` if the dependency
+tree is small enough to enumerate yourself. For packages with deep
+transitive dependency trees that conflict with Slicer's bundled libraries
+(e.g. nnUNet pulling in `torch` and `SimpleITK`), `skip_packages` is
+often the only practical option short of forking the package -- which is
+why it exists.
 
-The two parameters are mutually exclusive.
+`skip_packages` and `no_deps_requirements` are mutually exclusive.
 :::
-
-### Install packages with broken dependency declarations
-
-When a package declares overly strict dependencies that conflict with other packages,
-use `no_deps_requirements` to install it without its declared dependencies, then
-install the actual dependencies you need separately:
-
-```python
-slicer.util.pip_install(
-    requirements="numpy scipy",
-    no_deps_requirements="problematic-pkg==1.0",
-)
-```
 
 ### Non-blocking package installation
 

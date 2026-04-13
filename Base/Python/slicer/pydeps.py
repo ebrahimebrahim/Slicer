@@ -399,9 +399,8 @@ def pip_ensure(
         Constraints files use the same format as requirements files but only constrain
         versions without triggering installation. Useful for ensuring compatible
         versions across multiple extensions.
-    :param skip_packages: Package names to exclude from installation (and from the
-        dependency tree). Forwarded to :func:`pip_install` -- see its documentation
-        for full details.
+    :param skip_packages: Discouraged workaround for transitive dependency conflicts;
+        see the script repository for guidance. Forwarded to :func:`pip_install`.
     :param prompt_install: If True (default), show confirmation dialog before installing.
     :param prompt_restart: If True (default), check whether any updated packages were
         already imported and, if so, show a dialog recommending a restart. The user
@@ -590,12 +589,14 @@ def pip_install(
         When provided, installation happens in two steps: first ``no_deps_requirements`` are
         installed with ``--no-deps``, then ``requirements`` are installed normally.
         Mutually exclusive with ``skip_packages``.
-    :param skip_packages: Package names to exclude from the dependency tree. Installs
-        each requirement with ``--no-deps``, walks its dependencies recursively, and
-        skips any package in this list. Metadata is scrubbed so pip won't try to install
-        them later. Name matching is case-insensitive and normalizes hyphens/underscores.
-        Returns a list of the skipped requirement strings.
-        Requires ``blocking=True``. Mutually exclusive with ``no_deps_requirements``.
+    :param skip_packages: Discouraged workaround for transitive dependency conflicts;
+        see the script repository for guidance. Package names to exclude from the
+        dependency tree: installs each requirement with ``--no-deps``, walks its
+        dependencies recursively, and skips any package in this list. Metadata is
+        scrubbed so pip won't try to install them later. Name matching is
+        case-insensitive and normalizes hyphens/underscores. Returns a list of the
+        skipped requirement strings. Requires ``blocking=True``. Mutually exclusive
+        with ``no_deps_requirements``.
     :param blocking: If True (default), block until installation completes and raise
         CalledProcessError on failure. If False, return immediately and use callbacks.
         Note: When running in PythonSlicer (without the full application), blocking mode
@@ -630,17 +631,6 @@ def pip_install(
         When using ``blocking=False``, the user can interact with the application
         while installation is in progress. Consider disabling relevant UI elements
         to prevent conflicts.
-
-    .. note::
-
-        **Choosing between** ``skip_packages`` **and** ``no_deps_requirements``:
-
-        - ``no_deps_requirements``: the package has broken dependency declarations
-          and you provide the correct deps yourself. Fast (2 pip calls), no metadata
-          changes.
-        - ``skip_packages``: you want the full dependency tree except for specific
-          packages already provided by Slicer (e.g., SimpleITK, torch). Slower (one
-          pip call per package) but automatic.
 
     Example:
 
