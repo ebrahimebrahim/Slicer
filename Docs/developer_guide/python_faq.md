@@ -375,11 +375,10 @@ For detailed usage examples, see [Install a Python package](/developer_guide/scr
 Since installing packages can have side effects on other extensions or the main application, here are some best practices to adhere to:
 
 **DO:**
-* ✅ Always include a confirmation dialog that clearly communicates the installation process, mirroring the approach in the linked example.
+* ✅ Ask the user before installing. {func}`slicer.packaging.pip_ensure` does this for you; if you go through the lower-level {func}`slicer.packaging.pip_install`, write your own confirmation dialog as shown in the linked example.
 * ✅ Document the dependencies your module relies upon using a `requirements.txt` file.
 * ✅ Consider specifying version requirements using `>=X.Y` to avoid incompatible versions.
 * ✅ Verify that all Python packages are distributed as Python wheels. This is particularly important for dependencies including compiled code, as installing a wheel eliminates the need for users to install a compiler.
-* ✅ Use the `requester` parameter in {func}`slicer.packaging.pip_ensure` to identify your extension in dialogs.
 
 **DON'T:**
 * ❌ Do not install any packages in the global scope (outside of all classes and functions) or in the module class constructor. This can significantly slow down application startup, and it may even prevent the module from loading.

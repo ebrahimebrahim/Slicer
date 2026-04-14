@@ -9,6 +9,14 @@ The `slicer.packaging` module with `pip_ensure`, `pip_check`, `load_requirements
 and `load_pyproject_dependencies`.
 :::
 
+:::{tip}
+When writing a Slicer module, prefer {func}`slicer.packaging.pip_ensure` over
+{func}`slicer.packaging.pip_install`. `pip_ensure` checks whether each requirement is already
+satisfied (skipping the install if so), prompts the user before modifying the environment, and
+detects when an updated package was already imported in the current session and offers a restart
+prompt. `pip_install` is the lower-level building block and does none of those things on its own.
+:::
+
 ### Check if packages are installed
 
 Use `pip_check` to test whether requirements are already satisfied without launching a
@@ -29,6 +37,23 @@ if slicer.packaging.pip_check("scipy>=1.0 numpy>=1.20"):
 reqs = slicer.packaging.load_requirements("/path/to/requirements.txt")
 if not slicer.packaging.pip_check(reqs):
     print("Some requirements are missing")
+```
+
+### Load requirements from a file
+
+You can keep your dependencies in a `requirements.txt` file and load them with
+{func}`slicer.packaging.load_requirements`:
+
+```python
+reqs = slicer.packaging.load_requirements(self.resourcePath("requirements.txt"))
+slicer.packaging.pip_ensure(reqs, requester="MyExtension")
+```
+
+If your extension already has a `pyproject.toml`, you can read the `[project.dependencies]` list with {func}`slicer.packaging.load_pyproject_dependencies` instead. Both functions return the same `list[Requirement]` type, so the rest of the pipeline (`pip_check`, `pip_ensure`) works identically:
+
+```python
+reqs = slicer.packaging.load_pyproject_dependencies(self.resourcePath("pyproject.toml"))
+slicer.packaging.pip_ensure(reqs, requester="MyExtension")
 ```
 
 ### Install packages with a constraints file
