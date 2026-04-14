@@ -43,6 +43,8 @@ ctest -L ModuleName                 # run tests by label
 
 Tests are CTest-based. Python module tests are also invoked through CTest. Nightly results go to [slicer.cdash.org](https://slicer.cdash.org).
 
+**Careful with `ctest -R`**: if the regex matches zero tests, CTest prints "No tests were found!!!" but exits with status 0. A typo'd or out-of-date test name silently "passes". Pass `--no-tests=error` whenever you filter by name.
+
 ### Python test naming in CTest
 
 Python tests are registered via `slicer_add_python_unittest()` in `CMake/SlicerMacroPythonTesting.cmake`. The CTest name is: `py_${TESTNAME_PREFIX}${script_name_without_extension}`. For example, `Base/Python/slicer/tests/test_slicer_util_pip.py` registered with `TESTNAME_PREFIX nomainwindow_` becomes `py_nomainwindow_test_slicer_util_pip`. Use `ctest -N | grep <keyword>` to find the actual test name before running.
@@ -142,6 +144,9 @@ Prefix every commit message with one of:
 - `WIP:` — Work in progress
 
 Subject line: imperative mood, <72 chars, capitalized, no trailing period.
+The subject should emphasize *why* the change exists, not *what* the diff
+contains -- the diff already shows the what. Write for a human scanning
+`git log` who needs to understand the purpose at a glance.
 
 Additionally, use the `CLAUDE:` prefix for commits that won't be submitted upstream — Claude-specific artifacts, scratchwork notes, planning documents, `pr-*-notes/` files, CLAUDE.md updates, etc. Only commits with standard prefixes (ENH, BUG, etc.) get cherry-picked to branches destined for merging to main. Keep implementation changes and non-submission changes in separate commits to make cherry-picking clean.
 
@@ -152,7 +157,9 @@ Enforced via pre-commit hooks (`.pre-commit-config.yaml`):
 - **Python**: ruff for linting (`.ruff.toml`, targets Python 3.12), pyupgrade for modernization (`--py312-plus`).
 - **YAML**: prettier.
 
-Run `pre-commit run --all-files` to check formatting locally.
+Run `pre-commit run --all-files` to check formatting locally. CI runs exactly this command, so running it on a hand-picked file list instead will miss issues that CI catches.
+
+**Ruff F401 auto-deletes unused imports.** For imports that exist for side effect — e.g. names imported at the top of `slicerqt.py` so they land in the Python console `__main__` — mark the line with `# noqa: F401` or ruff will silently remove it.
 
 ## Coding Conventions
 
@@ -188,6 +195,15 @@ Run `pre-commit run --all-files` to check formatting locally.
 - **`slicer.util.pip_install()` for runtime dependencies.** Slicer bundles its own Python.
   Extensions should install additional packages via `slicer.util.pip_install("package")`,
   not via system pip.
+- **`Slicer --python-code "..."` gotchas when scripting from a shell.**
+  - Slicer does **not** auto-exit if your Python code raises — the Qt event loop keeps the
+    process alive. Wrap the code in `try: ... finally: slicer.app.exit()`, or the invocation
+    hangs forever.
+  - Multi-line Python inside the quoted argument often trips Slicer's command-line parser.
+    Use `;` to separate statements and keep the whole thing on one line.
+  - Each invocation starts with a fresh `slicer` namespace. Submodules like `slicer.packaging`
+    that aren't auto-imported at startup must be explicitly imported at the top of the code
+    string — not just once in a long-running console session.
 
 ## Prefer Existing APIs
 
