@@ -111,8 +111,8 @@ def load_requirements(path: str | Path) -> list[Requirement]:
     .. code-block:: python
 
       from pathlib import Path
-      reqs = slicer.pydeps.load_requirements(Path(__file__).parent / "requirements.txt")
-      slicer.pydeps.pip_ensure(reqs, requester="MyExtension")
+      reqs = slicer.packaging.load_requirements(Path(__file__).parent / "requirements.txt")
+      slicer.packaging.pip_ensure(reqs, requester="MyExtension")
 
     """
     reqs = []
@@ -158,10 +158,10 @@ def load_pyproject_dependencies(path: str | Path) -> list[Requirement]:
     .. code-block:: python
 
       from pathlib import Path
-      reqs = slicer.pydeps.load_pyproject_dependencies(
+      reqs = slicer.packaging.load_pyproject_dependencies(
           Path(__file__).parent / "pyproject.toml"
       )
-      slicer.pydeps.pip_ensure(reqs, requester="MyExtension")
+      slicer.packaging.pip_ensure(reqs, requester="MyExtension")
 
     """
     with open(path, "rb") as f:
@@ -221,7 +221,7 @@ def pip_check(
 
     .. code-block:: python
 
-      if slicer.pydeps.pip_check("numpy>=1.20"):
+      if slicer.packaging.pip_check("numpy>=1.20"):
           print("numpy is satisfied")
 
     """
@@ -300,12 +300,12 @@ def isPipInstallInProgress() -> bool:
 
     .. code-block:: python
 
-      if slicer.pydeps.isPipInstallInProgress():
+      if slicer.packaging.isPipInstallInProgress():
           slicer.util.warningDisplay(
               "Package installation is in progress. Please wait."
           )
       else:
-          slicer.pydeps.pip_install("scipy", blocking=False)
+          slicer.packaging.pip_install("scipy", blocking=False)
 
     """
     return _pip_install_in_progress
@@ -428,7 +428,7 @@ def pip_ensure(
       class MyFilterWidget(ScriptedLoadableModuleWidget):
 
           def onApplyButton(self):
-              slicer.pydeps.pip_ensure("scikit-image>=0.20", requester="MyFilter")
+              slicer.packaging.pip_ensure("scikit-image>=0.20", requester="MyFilter")
               import skimage
 
               # Now safe to use skimage
@@ -436,8 +436,8 @@ def pip_ensure(
 
     For loading from a requirements file, use :func:`load_requirements`::
 
-      reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
-      slicer.pydeps.pip_ensure(reqs, requester="MyFilter")
+      reqs = slicer.packaging.load_requirements(self.resourcePath("requirements.txt"))
+      slicer.packaging.pip_ensure(reqs, requester="MyFilter")
 
     For more examples (constraints, skip_packages), see
     :doc:`/developer_guide/script_repository` (Python package management section).
@@ -1169,7 +1169,7 @@ def pip_uninstall(
 
     .. code-block:: python
 
-      from slicer.pydeps import pip_uninstall
+      from slicer.packaging import pip_uninstall
       pip_uninstall("tensorflow")
 
     """

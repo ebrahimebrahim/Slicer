@@ -244,9 +244,9 @@ class TemplateKeyWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # TODO: If your module requires additional Python packages, uncomment
         # the following lines and add your dependencies to the
         # Resources/requirements.txt file (one per line, e.g. "scikit-image>=0.20").
-        # import slicer.pydeps
-        # slicer.pydeps.pip_ensure(
-        #     slicer.pydeps.load_requirements(self.resourcePath("requirements.txt")),
+        # import slicer.packaging
+        # slicer.packaging.pip_ensure(
+        #     slicer.packaging.load_requirements(self.resourcePath("requirements.txt")),
         #     requester="TemplateKey",
         # )
 

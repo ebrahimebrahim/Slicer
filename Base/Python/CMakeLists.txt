@@ -15,7 +15,7 @@ set(Slicer_PYTHON_SCRIPTS
   slicer/parameterNodeWrapper/util
   slicer/parameterNodeWrapper/validators
   slicer/parameterNodeWrapper/wrapper
-  slicer/pydeps
+  slicer/packaging
   slicer/ScriptedLoadableModule
   slicer/testing
   slicer/util

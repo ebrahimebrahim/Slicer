@@ -25,10 +25,10 @@
     :show-inheritance:
 ```
 
-## slicer.pydeps
+## slicer.packaging
 
 ```{eval-rst}
-.. automodule:: slicer.pydeps
+.. automodule:: slicer.packaging
     :members:
     :undoc-members:
     :show-inheritance:

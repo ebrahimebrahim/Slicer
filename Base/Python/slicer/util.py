@@ -4086,24 +4086,24 @@ def logProcessOutput(proc, logCallback=None):
 def pip_install(requirements, **kwargs):
     """Install python packages.
 
-    This is a convenience wrapper that delegates to :func:`slicer.pydeps.pip_install`.
+    This is a convenience wrapper that delegates to :func:`slicer.packaging.pip_install`.
     See that function for full documentation and parameter details.
 
     :param requirements: requirement specifier (string or list), same format as used by pip.
     """
-    from slicer.pydeps import pip_install as _pip_install
+    from slicer.packaging import pip_install as _pip_install
     return _pip_install(requirements, **kwargs)
 
 
 def pip_uninstall(requirements, **kwargs):
     """Uninstall python packages.
 
-    This is a convenience wrapper that delegates to :func:`slicer.pydeps.pip_uninstall`.
+    This is a convenience wrapper that delegates to :func:`slicer.packaging.pip_uninstall`.
     See that function for full documentation and parameter details.
 
     :param requirements: requirement specifier (string or list), same format as used by pip.
     """
-    from slicer.pydeps import pip_uninstall as _pip_uninstall
+    from slicer.packaging import pip_uninstall as _pip_uninstall
     return _pip_uninstall(requirements, **kwargs)
 
 

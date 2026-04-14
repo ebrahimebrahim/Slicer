@@ -1274,23 +1274,23 @@ It is recommended to only install a package at runtime when it is actually neede
 #### Recommended approach using pip_ensure
 
 :::{versionadded} 5.11
-The `slicer.pydeps` module and the `pip_ensure` workflow described below.
+The `slicer.packaging` module and the `pip_ensure` workflow described below.
 :::
 
-The `slicer.pydeps.pip_ensure()` function handles checking, prompting, and installing in one call with a progress dialog:
+The `slicer.packaging.pip_ensure()` function handles checking, prompting, and installing in one call with a progress dialog:
 
 ```python
-import slicer.pydeps
+import slicer.packaging
 
 class MyModuleWidget(ScriptedLoadableModuleWidget):
 
     def onApplyButton(self):
         # For a single package (or space-separated list):
-        slicer.pydeps.pip_ensure("flywheel-sdk>=1.0", requester="MyModule")
+        slicer.packaging.pip_ensure("flywheel-sdk>=1.0", requester="MyModule")
 
         # Or load requirements from file (recommended for multiple dependencies):
-        # reqs = slicer.pydeps.load_requirements(self.resourcePath("requirements.txt"))
-        # slicer.pydeps.pip_ensure(reqs, requester="MyModule")
+        # reqs = slicer.packaging.load_requirements(self.resourcePath("requirements.txt"))
+        # slicer.packaging.pip_ensure(reqs, requester="MyModule")
 
         import flywheel
         # Now safe to use flywheel
