@@ -25,7 +25,7 @@ modules, are not available.
 :::
 
 :::{tip}
-To install additional packages, you can use the {func}`slicer.util.pip_install()` function.
+To install additional packages, you can use the {func}`slicer.packaging.pip_install()` function.
 :::
 
 ## What is the Python Console?
@@ -50,7 +50,7 @@ For example, this applies to the [Segment Editor effects](/user_guide/modules/se
 :::
 
 :::{tip}
-To install additional packages, you can use the {func}`slicer.util.pip_install()` function.
+To install additional packages, you can use the {func}`slicer.packaging.pip_install()` function.
 :::
 
 :::{versionchanged} 5.2.0
@@ -367,7 +367,7 @@ Slicer provides several utility functions to help manage Python dependencies:
 
 The recommended approach is to use {func}`slicer.packaging.pip_ensure`, which handles checking, user confirmation, and installation with progress display in one call. It also automatically skips installation when running in testing mode (`slicer.app.testingEnabled()`).
 
-For direct installation with visual feedback, use {func}`slicer.util.pip_install` with `show_progress=True`. This displays a modal progress dialog during installation.
+For direct installation with visual feedback, use {func}`slicer.packaging.pip_install` with `show_progress=True`. This displays a modal progress dialog during installation.
 
 For detailed usage examples, see [Install a Python package](/developer_guide/script_repository.md#install-a-python-package) in the Script Repository.
 

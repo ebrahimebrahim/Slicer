@@ -50,7 +50,7 @@ slicer.packaging.pip_ensure(
 
 ```python
 # Via pip_install (lower level)
-slicer.util.pip_install("pandas scipy", constraints="/path/to/constraints.txt")
+slicer.packaging.pip_install("pandas scipy", constraints="/path/to/constraints.txt")
 ```
 
 ### Install packages with broken dependency declarations
@@ -60,7 +60,7 @@ use `no_deps_requirements` to install it without its declared dependencies, then
 install the actual dependencies you need separately:
 
 ```python
-slicer.util.pip_install(
+slicer.packaging.pip_install(
     requirements="numpy scipy",
     no_deps_requirements="problematic-pkg==1.0",
 )
@@ -119,7 +119,7 @@ def onComplete(returnCode):
     else:
         slicer.util.errorDisplay("Failed to install packages")
 
-slicer.util.pip_install(
+slicer.packaging.pip_install(
     "pandas scipy",
     blocking=False,
     completedCallback=onComplete,
@@ -144,5 +144,5 @@ import slicer.packaging
 if slicer.packaging.isPipInstallInProgress():
     slicer.util.warningDisplay("Package installation is in progress. Please wait.")
 else:
-    slicer.util.pip_install("scipy", blocking=False, requester="MyExtension")
+    slicer.packaging.pip_install("scipy", blocking=False, requester="MyExtension")
 ```

@@ -1311,7 +1311,7 @@ try:
   import flywheel
 except ModuleNotFoundError:
   if slicer.util.confirmOkCancelDisplay("This module requires 'flywheel-sdk' Python package. Click OK to install it now."):
-    slicer.util.pip_install("flywheel-sdk", requester="MyModule")
+    slicer.packaging.pip_install("flywheel-sdk", requester="MyModule")
     import flywheel
 ```
 
@@ -1324,6 +1324,6 @@ try:
   import flywheel
 except ModuleNotFoundError:
   if slicer.util.confirmOkCancelDisplay("This module requires 'flywheel-sdk' Python package. Click OK to install it now."):
-    slicer.util.pip_install("flywheel-sdk", show_progress=False)
+    slicer.packaging.pip_install("flywheel-sdk", show_progress=False)
     import flywheel
 ```

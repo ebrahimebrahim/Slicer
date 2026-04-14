@@ -2659,7 +2659,7 @@ def dataframeFromTable(tableNode):
             warnings.simplefilter(action="ignore", category=UserWarning)
             import pandas as pd
     except ImportError:
-        raise ImportError("Failed to convert to pandas dataframe. Please install pandas by running `slicer.util.pip_install('pandas')`")
+        raise ImportError("Failed to convert to pandas dataframe. Please install pandas by running `slicer.packaging.pip_install('pandas')`")
     dataframe = pd.DataFrame()
     vtable = tableNode.GetTable()
     for columnIndex in range(vtable.GetNumberOfColumns()):
@@ -2697,7 +2697,7 @@ def dataframeFromMarkups(markupsNode):
             warnings.simplefilter(action="ignore", category=UserWarning)
             import pandas as pd
     except ImportError:
-        raise ImportError("Failed to convert to pandas dataframe. Please install pandas by running `slicer.util.pip_install('pandas')`")
+        raise ImportError("Failed to convert to pandas dataframe. Please install pandas by running `slicer.packaging.pip_install('pandas')`")
 
     label = []
     description = []
@@ -3253,7 +3253,7 @@ def displayPythonShell(display=True):
     .. code-block:: python
 
       with slicer.util.displayPythonShell():
-        slicer.util.pip_install('nibabel')
+        slicer.packaging.pip_install('nibabel')
 
     """
     import slicer
