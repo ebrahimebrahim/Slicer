@@ -172,6 +172,9 @@ Run `pre-commit run --all-files` to check formatting locally. CI runs exactly th
   not variable names in the target language). Developer-only text and log messages can remain
   untranslated. See the
   [SlicerLanguagePacks developer manual](https://github.com/SoniaPujolLab/SlicerLanguagePacks/blob/main/DevelopersManual.md).
+  Don't unpack tuples into `_` (e.g. `_, x = ...`) inside a function that also calls `_(...)`:
+  Python decides `_` is local for that whole function, shadowing the module-level alias and
+  raising `UnboundLocalError` on every preceding `_(...)` call. Use `_unused, x = ...` instead.
 - **Python naming in modules.** Scripted modules use camelCase for methods (`onApplyButton`,
   `setParameterNode`) and follow the `logic`/`widget`/`test` class separation pattern.
 - **C++ naming.** Follows VTK conventions: `vtkNew`, `vtkSmartPointer`, `SetX()`/`GetX()`
