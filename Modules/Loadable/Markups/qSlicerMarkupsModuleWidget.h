@@ -195,6 +195,12 @@ public slots:
   void onSetColorOfHighlightedControlPointsTriggered();
   /// Clear the per-point color override on all currently selected control points.
   void onClearColorOfHighlightedControlPointsTriggered();
+
+protected:
+  /// Return the unique sorted control-point row indices currently selected in the table.
+  QList<int> highlightedControlPointRowIndices() const;
+
+public slots:
   /// Jump slices action slot
   void onJumpSlicesActionTriggered();
   /// Refocus cameras action slot

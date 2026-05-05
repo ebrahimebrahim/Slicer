@@ -35,10 +35,14 @@
 
 // MRML includes
 #include "vtkMRMLColorNode.h"
-#include "vtkMRMLFolderDisplayNode.h"
 #include "vtkMRMLInteractionEventData.h"
 #include "vtkMRMLMarkupsCurveNode.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
+
+// STL
+#include <algorithm>
+#include <array>
+#include <vector>
 
 vtkStandardNewMacro(vtkSlicerCurveRepresentation3D);
 
@@ -258,17 +262,11 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
 
   // Per-control-point line gradient: when UseControlPointColors is on and no
   // curve-side scalar coloring is active, propagate the per-point colors onto
-  // the curve world polydata as a "ControlPointColors" RGBA point scalar
+  // the curve world polydata as a PerPointColorArrayName RGBA point scalar
   // array, interpolating between adjacent control points so the line gradients
   // along each segment.
-  bool folderOverrideActiveCurve = false;
-  if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
-  {
-    vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
-    folderOverrideActiveCurve = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
-  }
   const bool useCpColorsForLine = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                  && !folderOverrideActiveCurve                        //
+                                  && !this->IsFolderDisplayOverrideActive()            //
                                   && !this->MarkupsDisplayNode->GetScalarVisibility();
 
   if (useCpColorsForLine && curveWorld && curveWorld->GetNumberOfPoints() > 0)
@@ -284,38 +282,38 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     }
     if (anyOverride)
     {
-      double fallbackColor[3] = { 1.0, 1.0, 1.0 };
+      // Precompute per-control-point RGBA + world position once, so the
+      // per-curve-point loop below avoids repeated string-keyed array
+      // lookups (curves can have 1000+ interpolated points).
+      double fallbackRgba[4] = { 1.0, 1.0, 1.0, 1.0 };
       double* widgetColor = this->GetWidgetColor(Unselected);
-      fallbackColor[0] = widgetColor[0];
-      fallbackColor[1] = widgetColor[1];
-      fallbackColor[2] = widgetColor[2];
+      fallbackRgba[0] = widgetColor[0];
+      fallbackRgba[1] = widgetColor[1];
+      fallbackRgba[2] = widgetColor[2];
+      std::vector<std::array<double, 4>> cpRgba(nCp);
+      std::vector<std::array<double, 3>> cpPosWorld(nCp);
+      for (int c = 0; c < nCp; ++c)
+      {
+        if (!markupsNode->GetNthControlPointColor(c, cpRgba[c].data()))
+        {
+          std::copy_n(fallbackRgba, 4, cpRgba[c].data());
+        }
+        markupsNode->GetNthControlPointPositionWorld(c, cpPosWorld[c].data());
+      }
       vtkIdType nCurve = curveWorld->GetNumberOfPoints();
-      vtkSmartPointer<vtkUnsignedCharArray> arr = vtkUnsignedCharArray::SafeDownCast(curveWorld->GetPointData()->GetArray("ControlPointColors"));
+      vtkSmartPointer<vtkUnsignedCharArray> arr = vtkUnsignedCharArray::SafeDownCast(curveWorld->GetPointData()->GetArray(PerPointColorArrayName));
       if (!arr || arr->GetNumberOfComponents() != 4)
       {
         arr = vtkSmartPointer<vtkUnsignedCharArray>::New();
-        arr->SetName("ControlPointColors");
+        arr->SetName(PerPointColorArrayName);
         arr->SetNumberOfComponents(4);
-        curveWorld->GetPointData()->RemoveArray("ControlPointColors");
+        curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
         curveWorld->GetPointData()->AddArray(arr);
       }
       arr->SetNumberOfTuples(nCurve);
-      auto cpColor = [&](int cpIdx, double rgba[4])
-      {
-        if (cpIdx < 0 || cpIdx >= nCp || !markupsNode->IsNthControlPointColorOverridden(cpIdx))
-        {
-          rgba[0] = fallbackColor[0];
-          rgba[1] = fallbackColor[1];
-          rgba[2] = fallbackColor[2];
-          rgba[3] = 1.0;
-          return;
-        }
-        markupsNode->GetNthControlPointColor(cpIdx, rgba);
-      };
       for (vtkIdType i = 0; i < nCurve; ++i)
       {
         int prevCp = markupsNode->GetControlPointIndexFromInterpolatedPointIndex(i);
-        int nextCp = prevCp + 1;
         if (prevCp < 0)
         {
           prevCp = 0;
@@ -324,20 +322,16 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
         {
           prevCp = nCp - 1;
         }
-        if (nextCp >= nCp)
-        {
-          nextCp = prevCp;
-        }
-        double prevRgba[4], nextRgba[4];
-        cpColor(prevCp, prevRgba);
-        cpColor(nextCp, nextRgba);
+        int nextCp = std::min(prevCp + 1, nCp - 1);
+        const double* prevRgba = cpRgba[prevCp].data();
+        const double* nextRgba = cpRgba[nextCp].data();
         double t = 0.0;
         if (prevCp != nextCp)
         {
-          double prevPos[3], nextPos[3], curvePos[3];
-          markupsNode->GetNthControlPointPositionWorld(prevCp, prevPos);
-          markupsNode->GetNthControlPointPositionWorld(nextCp, nextPos);
+          double curvePos[3];
           curveWorld->GetPoint(i, curvePos);
+          const double* prevPos = cpPosWorld[prevCp].data();
+          const double* nextPos = cpPosWorld[nextCp].data();
           double d1 = sqrt(vtkMath::Distance2BetweenPoints(prevPos, curvePos));
           double d2 = sqrt(vtkMath::Distance2BetweenPoints(curvePos, nextPos));
           double d = d1 + d2;
@@ -350,7 +344,7 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
         arr->SetTypedTuple(i, rgba);
       }
       arr->Modified();
-      curveWorld->GetPointData()->SetActiveScalars("ControlPointColors");
+      curveWorld->GetPointData()->SetActiveScalars(PerPointColorArrayName);
       this->LineMapper->SetScalarVisibility(true);
       this->LineMapper->SetScalarModeToUsePointData();
       this->LineMapper->SetColorModeToDirectScalars();
@@ -359,13 +353,13 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     }
     else
     {
-      curveWorld->GetPointData()->RemoveArray("ControlPointColors");
+      curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
       this->LineMapper->SetScalarVisibility(false);
     }
   }
   else
   {
-    curveWorld->GetPointData()->RemoveArray("ControlPointColors");
+    curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
   }
 
   // Scalars

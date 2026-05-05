@@ -147,6 +147,19 @@ public:
   bool IsDisplayable();
   //@}
 
+  /// True when an ancestor subject hierarchy folder is currently overriding
+  /// this markup's display (\sa vtkMRMLFolderDisplayNode). Per-point color
+  /// rendering and similar per-display features should defer to the folder
+  /// override when this is true.
+  bool IsFolderDisplayOverrideActive();
+
+  /// Name of the per-point RGBA scalar array attached to a rendering
+  /// pipeline's polydata when per-control-point colors are active. Reps
+  /// populate this array on the relevant `ControlPointsPolyData` (one tuple
+  /// per visible control point), and curve reps also write it on the curve
+  /// world polydata at curve-point resolution for line gradients.
+  static constexpr const char* PerPointColorArrayName = "ControlPointColors";
+
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
   ~vtkSlicerMarkupsWidgetRepresentation() override;

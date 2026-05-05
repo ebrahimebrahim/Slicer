@@ -2372,14 +2372,9 @@ void qSlicerMarkupsModuleWidget::onRightClickActiveMarkupTableWidget(QPoint pos)
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerMarkupsModuleWidget::onSetColorOfHighlightedControlPointsTriggered()
+QList<int> qSlicerMarkupsModuleWidget::highlightedControlPointRowIndices() const
 {
-  Q_D(qSlicerMarkupsModuleWidget);
-  if (!d->MarkupsNode)
-  {
-    return;
-  }
-  // Collect unique selected rows.
+  Q_D(const qSlicerMarkupsModuleWidget);
   QList<QTableWidgetItem*> selectedItems = d->activeMarkupTableWidget->selectedItems();
   QList<int> rows;
   for (int i = 0; i < selectedItems.size(); ++i)
@@ -2390,11 +2385,23 @@ void qSlicerMarkupsModuleWidget::onSetColorOfHighlightedControlPointsTriggered()
       rows << row;
     }
   }
+  std::sort(rows.begin(), rows.end());
+  return rows;
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onSetColorOfHighlightedControlPointsTriggered()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  if (!d->MarkupsNode)
+  {
+    return;
+  }
+  QList<int> rows = this->highlightedControlPointRowIndices();
   if (rows.isEmpty())
   {
     return;
   }
-  std::sort(rows.begin(), rows.end());
   // Pre-fill with the first row's existing color (or the display-node Color
   // if no override yet).
   QColor initial(255, 255, 255);
@@ -2432,17 +2439,7 @@ void qSlicerMarkupsModuleWidget::onClearColorOfHighlightedControlPointsTriggered
   {
     return;
   }
-  QList<QTableWidgetItem*> selectedItems = d->activeMarkupTableWidget->selectedItems();
-  QList<int> rows;
-  for (int i = 0; i < selectedItems.size(); ++i)
-  {
-    int row = selectedItems.at(i)->row();
-    if (!rows.contains(row))
-    {
-      rows << row;
-    }
-  }
-  for (int row : rows)
+  for (int row : this->highlightedControlPointRowIndices())
   {
     d->MarkupsNode->ClearNthControlPointColor(row);
   }

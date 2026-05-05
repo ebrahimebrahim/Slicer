@@ -313,14 +313,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
   }
 
   int numPoints = markupsNode->GetNumberOfControlPoints();
-
-  // Folder override status (we skip per-point colors when active).
-  bool folderOverrideActive = false;
-  if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
-  {
-    vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
-    folderOverrideActive = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
-  }
+  const bool folderOverrideActive = this->IsFolderDisplayOverrideActive();
 
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
   {
@@ -342,11 +335,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     vtkUnsignedCharArray* perPointColorsArray = nullptr;
     if (applyPerPointColors)
     {
-      perPointColorsArray = vtkUnsignedCharArray::SafeDownCast(controlPoints->ControlPointsPolyData->GetPointData()->GetArray("ControlPointColors"));
+      perPointColorsArray = vtkUnsignedCharArray::SafeDownCast(controlPoints->ControlPointsPolyData->GetPointData()->GetArray(PerPointColorArrayName));
       if (!perPointColorsArray)
       {
         vtkNew<vtkUnsignedCharArray> newArr;
-        newArr->SetName("ControlPointColors");
+        newArr->SetName(PerPointColorArrayName);
         newArr->SetNumberOfComponents(4);
         controlPoints->ControlPointsPolyData->GetPointData()->AddArray(newArr);
         perPointColorsArray = newArr;
@@ -355,7 +348,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     }
     else
     {
-      controlPoints->ControlPointsPolyData->GetPointData()->RemoveArray("ControlPointColors");
+      controlPoints->ControlPointsPolyData->GetPointData()->RemoveArray(PerPointColorArrayName);
     }
     double fallbackColor[3] = { 1.0, 1.0, 1.0 };
     if (applyPerPointColors)
@@ -488,7 +481,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     if (perPointColorsArray)
     {
       perPointColorsArray->Modified();
-      controlPoints->ControlPointsPolyData->GetPointData()->SetActiveScalars("ControlPointColors");
+      controlPoints->ControlPointsPolyData->GetPointData()->SetActiveScalars(PerPointColorArrayName);
     }
     else
     {
@@ -511,7 +504,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
       {
         int verticesPerGlyph = static_cast<int>(numOutput / numInput);
         vtkNew<vtkUnsignedCharArray> outRgba;
-        outRgba->SetName("ControlPointColors");
+        outRgba->SetName(PerPointColorArrayName);
         outRgba->SetNumberOfComponents(4);
         outRgba->SetNumberOfTuples(numOutput);
         unsigned char tuple[4];
@@ -525,9 +518,9 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
           perPointColorsArray->GetTypedTuple(inputIdx, tuple);
           outRgba->SetTypedTuple(oi, tuple);
         }
-        gout->GetPointData()->RemoveArray("ControlPointColors");
+        gout->GetPointData()->RemoveArray(PerPointColorArrayName);
         gout->GetPointData()->AddArray(outRgba);
-        gout->GetPointData()->SetActiveScalars("ControlPointColors");
+        gout->GetPointData()->SetActiveScalars(PerPointColorArrayName);
       }
     }
 
@@ -642,13 +635,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode*
     return;
   }
 
-  bool folderOverrideActive = false;
-  if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
-  {
-    vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
-    folderOverrideActive = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
-  }
-  const bool useControlPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() && !folderOverrideActive;
+  const bool useControlPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() && !this->IsFolderDisplayOverrideActive();
 
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
   {
