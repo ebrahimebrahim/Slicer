@@ -534,6 +534,26 @@
         </property>
        </widget>
       </item>
+      <item row="16" column="0">
+       <widget class="QLabel" name="useControlPointColorsLabel">
+        <property name="text">
+         <string>Per-point colors:</string>
+        </property>
+        <property name="toolTip">
+         <string>When enabled, control points that have a per-point color set (via vtkMRMLMarkupsNode::SetNthControlPointColor) override the Selected/Unselected colors above. ActiveColor still highlights the active control point. Folder display overrides still take precedence.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="16" column="1">
+       <widget class="QCheckBox" name="useControlPointColorsCheckBox">
+        <property name="toolTip">
+         <string>Enable per-control-point colors. Points without a per-point color use the Selected/Unselected colors above as fallbacks. Use SetNthControlPointColor on the markups node to assign per-point colors.</string>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
       <item row="8" column="1">
        <widget class="QCheckBox" name="PropertiesLabelVisibilityCheckBox">
         <property name="toolTip">

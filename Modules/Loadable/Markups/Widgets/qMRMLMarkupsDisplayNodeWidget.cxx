@@ -91,6 +91,7 @@ void qMRMLMarkupsDisplayNodeWidgetPrivate::init()
   QObject::connect(this->curveLineThicknessSliderWidget, SIGNAL(valueChanged(double)), q, SLOT(onCurveLineThicknessSliderWidgetChanged(double)));
   QObject::connect(this->curveLineDiameterSliderWidget, SIGNAL(valueChanged(double)), q, SLOT(onCurveLineDiameterSliderWidgetChanged(double)));
   QObject::connect(this->PropertiesLabelVisibilityCheckBox, SIGNAL(toggled(bool)), q, SLOT(setPropertiesLabelVisibility(bool)));
+  QObject::connect(this->useControlPointColorsCheckBox, SIGNAL(toggled(bool)), q, SLOT(setUseControlPointColors(bool)));
   QObject::connect(this->PointLabelsVisibilityCheckBox, SIGNAL(toggled(bool)), q, SLOT(setPointLabelsVisibility(bool)));
   QObject::connect(this->textScaleSliderWidget, SIGNAL(valueChanged(double)), q, SLOT(onTextScaleSliderWidgetChanged(double)));
 
@@ -327,6 +328,13 @@ void qMRMLMarkupsDisplayNodeWidget::updateWidgetFromMRML()
   d->curveLineDiameterSliderWidget->setMRMLScene(markupsDisplayNode->GetScene());
 
   d->PropertiesLabelVisibilityCheckBox->setChecked(markupsDisplayNode->GetPropertiesLabelVisibility());
+  bool useCpColors = markupsDisplayNode->GetUseControlPointColors();
+  if (d->useControlPointColorsCheckBox->isChecked() != useCpColors)
+  {
+    bool wasBlocked = d->useControlPointColorsCheckBox->blockSignals(true);
+    d->useControlPointColorsCheckBox->setChecked(useCpColors);
+    d->useControlPointColorsCheckBox->blockSignals(wasBlocked);
+  }
 
   d->PointLabelsVisibilityCheckBox->setChecked(markupsDisplayNode->GetPointLabelsVisibility());
 
@@ -475,6 +483,17 @@ void qMRMLMarkupsDisplayNodeWidget::setPropertiesLabelVisibility(bool visible)
     return;
   }
   d->MarkupsDisplayNode->SetPropertiesLabelVisibility(visible);
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::setUseControlPointColors(bool enabled)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (!d->MarkupsDisplayNode.GetPointer())
+  {
+    return;
+  }
+  d->MarkupsDisplayNode->SetUseControlPointColors(enabled);
 }
 
 //------------------------------------------------------------------------------
