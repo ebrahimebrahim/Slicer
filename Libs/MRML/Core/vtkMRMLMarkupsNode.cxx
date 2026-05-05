@@ -37,6 +37,7 @@
 #include <vtkBoundingBox.h>
 #include <vtkCellLocator.h>
 #include <vtkCollection.h>
+#include <vtkDataArray.h>
 #include <vtkParallelTransportFrame.h>
 #include <vtkGeneralTransform.h>
 #include <vtkMatrix3x3.h>
@@ -50,6 +51,7 @@
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
 #include <vtkTrivialProducer.h>
+#include <vtkUnsignedCharArray.h>
 #include "vtk_eigen.h"
 #include VTK_EIGEN(Dense)
 
@@ -70,6 +72,15 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   this->CurveInputPoly = vtkSmartPointer<vtkPolyData>::New();
   vtkNew<vtkPoints> curveInputPoints;
   this->CurveInputPoly->SetPoints(curveInputPoints);
+
+  // Control point dataset: one polydata point per control point in node-local
+  // coordinates. The PointData container holds per-control-point arrays
+  // (e.g. `Color`, `ColorOverridden`). Arrays start absent; they are created
+  // lazily by SetNthControlPointColor and friends, after which they are kept
+  // in sync with NumberOfControlPoints.
+  this->ControlPointDataSet = vtkSmartPointer<vtkPolyData>::New();
+  vtkNew<vtkPoints> controlPointDataSetPoints;
+  this->ControlPointDataSet->SetPoints(controlPointDataSetPoints);
 
   this->CurveGenerator = vtkSmartPointer<vtkCurveGenerator>::New();
   this->CurveGenerator->SetInputData(this->CurveInputPoly);
@@ -225,6 +236,26 @@ void vtkMRMLMarkupsNode::CopyContent(vtkMRMLNode* aSource, bool deepCopy /*=true
     this->AddControlPoint(controlPointCopy, false);
   }
   this->FixedNumberOfControlPoints = wasFixedNumberOfControlPoints;
+
+  // Copy per-control-point PointData arrays (e.g. Color, ColorOverridden).
+  // The dataset's points were already set up by AddControlPoint above; here
+  // we deep-copy named arrays from the source so per-point overrides
+  // round-trip through CopyContent.
+  vtkPointData* sourcePd = source->ControlPointDataSet->GetPointData();
+  vtkPointData* destPd = this->ControlPointDataSet->GetPointData();
+  for (int a = 0; a < sourcePd->GetNumberOfArrays(); ++a)
+  {
+    vtkDataArray* srcArr = sourcePd->GetArray(a);
+    if (!srcArr || srcArr->GetNumberOfTuples() == 0)
+    {
+      continue;
+    }
+    vtkSmartPointer<vtkDataArray> destArr = vtkSmartPointer<vtkDataArray>::Take(srcArr->NewInstance());
+    destArr->DeepCopy(srcArr);
+    destPd->RemoveArray(srcArr->GetName());
+    destPd->AddArray(destArr);
+  }
+  this->ControlPointDataSet->Modified();
 
   // Copy measurements
   this->RemoveAllMeasurements();
@@ -454,6 +485,11 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
 
   this->ControlPoints.clear();
 
+  // Drop control point dataset points and zero-shrink any per-point arrays.
+  this->ControlPointDataSet->GetPoints()->Reset();
+  this->ControlPointDataSet->GetPoints()->Squeeze();
+  this->SyncControlPointDataSetArrays();
+
   if (!this->GetDisableModifiedEvent())
   {
     this->CurveInputPoly->GetPoints()->Reset();
@@ -621,6 +657,25 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint* controlPoint, bool autoLab
   }
 
   this->ControlPoints.push_back(controlPoint);
+
+  // Append a slot to the control point dataset (point + a default-valued
+  // tuple in every non-empty per-point PointData array).
+  this->ControlPointDataSet->GetPoints()->InsertNextPoint(controlPoint->Position);
+  {
+    vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+    std::vector<double> zeros;
+    for (int a = 0; a < pd->GetNumberOfArrays(); ++a)
+    {
+      vtkDataArray* arr = pd->GetArray(a);
+      if (!arr || arr->GetNumberOfTuples() == 0)
+      {
+        continue;
+      }
+      zeros.assign(arr->GetNumberOfComponents(), 0.0);
+      arr->InsertNextTuple(zeros.data());
+      arr->Modified();
+    }
+  }
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -837,6 +892,34 @@ void vtkMRMLMarkupsNode::RemoveNthControlPoint(int pointIndex)
   delete this->ControlPoints[static_cast<unsigned int>(pointIndex)];
   this->ControlPoints.erase(this->ControlPoints.begin() + pointIndex);
 
+  // Remove the corresponding slot from the control point dataset. Snapshot
+  // existing values first to avoid relying on SetNumberOfPoints preserving
+  // the underlying buffer.
+  {
+    vtkPoints* points = this->ControlPointDataSet->GetPoints();
+    int oldSize = static_cast<int>(points->GetNumberOfPoints());
+    if (pointIndex < oldSize)
+    {
+      std::vector<double> snapshot(oldSize * 3, 0.0);
+      for (int i = 0; i < oldSize; ++i)
+      {
+        points->GetPoint(i, snapshot.data() + i * 3);
+      }
+      points->SetNumberOfPoints(oldSize - 1);
+      for (int i = 0; i < pointIndex; ++i)
+      {
+        points->SetPoint(i, snapshot.data() + i * 3);
+      }
+      for (int i = pointIndex + 1; i < oldSize; ++i)
+      {
+        points->SetPoint(i - 1, snapshot.data() + i * 3);
+      }
+      points->Modified();
+    }
+  }
+  this->RemoveControlPointDataSetTupleAt(pointIndex);
+  this->ControlPointDataSet->Modified();
+
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateCurvePolyFromControlPoints();
@@ -880,6 +963,33 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint* controlPoint, int targ
 
   std::vector<ControlPoint*>::iterator pos = this->ControlPoints.begin() + destIndex;
   this->ControlPoints.insert(pos, controlPoint);
+
+  // Insert a slot at destIndex into the control point dataset (point + a
+  // default-valued tuple in every non-empty per-point PointData array).
+  // Snapshot existing point coordinates first to avoid relying on the
+  // underlying vtkPoints buffer being preserved across SetNumberOfPoints.
+  {
+    vtkPoints* points = this->ControlPointDataSet->GetPoints();
+    int oldSize = static_cast<int>(points->GetNumberOfPoints());
+    std::vector<double> snapshot(oldSize * 3, 0.0);
+    for (int i = 0; i < oldSize; ++i)
+    {
+      points->GetPoint(i, snapshot.data() + i * 3);
+    }
+    points->SetNumberOfPoints(oldSize + 1);
+    for (int i = 0; i < destIndex; ++i)
+    {
+      points->SetPoint(i, snapshot.data() + i * 3);
+    }
+    points->SetPoint(destIndex, controlPoint->Position);
+    for (int i = destIndex; i < oldSize; ++i)
+    {
+      points->SetPoint(i + 1, snapshot.data() + i * 3);
+    }
+    points->Modified();
+  }
+  this->InsertControlPointDataSetTupleAt(destIndex);
+  this->ControlPointDataSet->Modified();
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -976,6 +1086,22 @@ void vtkMRMLMarkupsNode::SwapControlPoints(int m1, int m2)
   *controlPoint1 = *controlPoint2;
   // and copy the backup of the first one into the second
   *controlPoint2 = controlPoint1Backup;
+
+  // Swap the corresponding control point dataset entries.
+  {
+    vtkPoints* points = this->ControlPointDataSet->GetPoints();
+    if (m1 < points->GetNumberOfPoints() && m2 < points->GetNumberOfPoints())
+    {
+      double p1[3], p2[3];
+      points->GetPoint(m1, p1);
+      points->GetPoint(m2, p2);
+      points->SetPoint(m1, p2);
+      points->SetPoint(m2, p1);
+      points->Modified();
+    }
+  }
+  this->SwapControlPointDataSetTuples(m1, m2);
+  this->ControlPointDataSet->Modified();
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -1783,6 +1909,352 @@ void vtkMRMLMarkupsNode::SetNthControlPointDescription(int n, std::string descri
   }
   controlPoint->Description = description;
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, static_cast<void*>(&n));
+  this->StorableModifiedTime.Modified();
+}
+
+//---------------------------------------------------------------------------
+// Per-control-point color override
+//---------------------------------------------------------------------------
+
+namespace
+{
+// Reserved PointData array names on the control point dataset.
+const char* CP_COLOR_ARRAY = "Color";
+const char* CP_COLOR_OVERRIDDEN_ARRAY = "ColorOverridden";
+
+// Snapshot all tuple values of arr into a flat std::vector<double> of size
+// (numTuples * numComponents). Reads existing values via GetTuple before any
+// resize, so callers can rebuild the array from the snapshot without relying
+// on SetNumberOfTuples preserving old data (vtkAOSDataArrayTemplate may
+// reallocate the buffer on grow).
+void SnapshotArrayValues(vtkDataArray* arr, std::vector<double>& outFlat)
+{
+  int nt = static_cast<int>(arr->GetNumberOfTuples());
+  int nc = arr->GetNumberOfComponents();
+  outFlat.assign(nt * nc, 0.0);
+  for (int i = 0; i < nt; ++i)
+  {
+    arr->GetTuple(i, outFlat.data() + i * nc);
+  }
+}
+
+// Look up an array by name, creating it if it does not exist. Newly-created
+// arrays are sized to numTuples and zero-initialised.
+vtkUnsignedCharArray* EnsureUCharArray(vtkPointData* pd, const char* name, int numComponents, int numTuples)
+{
+  vtkUnsignedCharArray* arr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(name));
+  if (!arr)
+  {
+    vtkNew<vtkUnsignedCharArray> newArr;
+    newArr->SetName(name);
+    newArr->SetNumberOfComponents(numComponents);
+    newArr->SetNumberOfTuples(numTuples);
+    newArr->Fill(0);
+    pd->AddArray(newArr);
+    arr = newArr;
+  }
+  return arr;
+}
+} // namespace
+
+//---------------------------------------------------------------------------
+vtkPolyData* vtkMRMLMarkupsNode::GetControlPointDataSet()
+{
+  this->UpdateControlPointDataSetPoints();
+  return this->ControlPointDataSet;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::UpdateControlPointDataSetPoints()
+{
+  vtkPoints* points = this->ControlPointDataSet->GetPoints();
+  int n = this->GetNumberOfControlPoints();
+  points->SetNumberOfPoints(n);
+  for (int i = 0; i < n; ++i)
+  {
+    points->SetPoint(i, this->ControlPoints[static_cast<size_t>(i)]->Position);
+  }
+  points->Modified();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::SyncControlPointDataSetArrays()
+{
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  int targetSize = this->GetNumberOfControlPoints();
+  for (int a = 0; a < pd->GetNumberOfArrays(); ++a)
+  {
+    vtkDataArray* arr = pd->GetArray(a);
+    if (!arr)
+    {
+      continue;
+    }
+    int currentSize = static_cast<int>(arr->GetNumberOfTuples());
+    if (currentSize == 0 || currentSize == targetSize)
+    {
+      continue;
+    }
+    int nc = arr->GetNumberOfComponents();
+    std::vector<double> snapshot;
+    SnapshotArrayValues(arr, snapshot);
+    arr->SetNumberOfTuples(targetSize);
+    int common = std::min(currentSize, targetSize);
+    for (int i = 0; i < common; ++i)
+    {
+      arr->SetTuple(i, snapshot.data() + i * nc);
+    }
+    if (currentSize < targetSize)
+    {
+      std::vector<double> zeros(nc, 0.0);
+      for (int i = currentSize; i < targetSize; ++i)
+      {
+        arr->SetTuple(i, zeros.data());
+      }
+    }
+    arr->Modified();
+  }
+  this->ControlPointDataSet->Modified();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::InsertControlPointDataSetTupleAt(int insertIndex)
+{
+  // Snapshot existing values up front; do not depend on SetNumberOfTuples
+  // preserving the underlying buffer.
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  for (int a = 0; a < pd->GetNumberOfArrays(); ++a)
+  {
+    vtkDataArray* arr = pd->GetArray(a);
+    if (!arr || arr->GetNumberOfTuples() == 0)
+    {
+      continue;
+    }
+    int oldSize = static_cast<int>(arr->GetNumberOfTuples());
+    int nc = arr->GetNumberOfComponents();
+    std::vector<double> snapshot;
+    SnapshotArrayValues(arr, snapshot);
+    arr->SetNumberOfTuples(oldSize + 1);
+    std::vector<double> zeros(nc, 0.0);
+    for (int i = 0; i < insertIndex; ++i)
+    {
+      arr->SetTuple(i, snapshot.data() + i * nc);
+    }
+    arr->SetTuple(insertIndex, zeros.data());
+    for (int i = insertIndex; i < oldSize; ++i)
+    {
+      arr->SetTuple(i + 1, snapshot.data() + i * nc);
+    }
+    arr->Modified();
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::RemoveControlPointDataSetTupleAt(int removeIndex)
+{
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  for (int a = 0; a < pd->GetNumberOfArrays(); ++a)
+  {
+    vtkDataArray* arr = pd->GetArray(a);
+    if (!arr || arr->GetNumberOfTuples() == 0)
+    {
+      continue;
+    }
+    int oldSize = static_cast<int>(arr->GetNumberOfTuples());
+    if (removeIndex < 0 || removeIndex >= oldSize)
+    {
+      continue;
+    }
+    int nc = arr->GetNumberOfComponents();
+    std::vector<double> snapshot;
+    SnapshotArrayValues(arr, snapshot);
+    arr->SetNumberOfTuples(oldSize - 1);
+    for (int i = 0; i < removeIndex; ++i)
+    {
+      arr->SetTuple(i, snapshot.data() + i * nc);
+    }
+    for (int i = removeIndex + 1; i < oldSize; ++i)
+    {
+      arr->SetTuple(i - 1, snapshot.data() + i * nc);
+    }
+    arr->Modified();
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::SwapControlPointDataSetTuples(int m1, int m2)
+{
+  if (m1 == m2)
+  {
+    return;
+  }
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  for (int a = 0; a < pd->GetNumberOfArrays(); ++a)
+  {
+    vtkDataArray* arr = pd->GetArray(a);
+    if (!arr || arr->GetNumberOfTuples() == 0)
+    {
+      continue;
+    }
+    int nc = arr->GetNumberOfComponents();
+    std::vector<double> t1(nc), t2(nc);
+    arr->GetTuple(m1, t1.data());
+    arr->GetTuple(m2, t2.data());
+    arr->SetTuple(m1, t2.data());
+    arr->SetTuple(m2, t1.data());
+    arr->Modified();
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::SetNthControlPointColor(int n, const double rgba[4])
+{
+  this->SetNthControlPointColor(n, rgba[0], rgba[1], rgba[2], rgba[3]);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::SetNthControlPointColor(int n, double r, double g, double b, double a /*=1.0*/)
+{
+  if (!this->GetNthControlPointCustomLog(n, "SetNthControlPointColor"))
+  {
+    return;
+  }
+  auto clamp01 = [](double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); };
+  unsigned char rgbaBytes[4] = {
+    static_cast<unsigned char>(clamp01(r) * 255.0 + 0.5),
+    static_cast<unsigned char>(clamp01(g) * 255.0 + 0.5),
+    static_cast<unsigned char>(clamp01(b) * 255.0 + 0.5),
+    static_cast<unsigned char>(clamp01(a) * 255.0 + 0.5)
+  };
+  int targetSize = this->GetNumberOfControlPoints();
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  vtkUnsignedCharArray* colorArr = EnsureUCharArray(pd, CP_COLOR_ARRAY, 4, targetSize);
+  vtkUnsignedCharArray* flagArr = EnsureUCharArray(pd, CP_COLOR_OVERRIDDEN_ARRAY, 1, targetSize);
+  this->SyncControlPointDataSetArrays();
+
+  unsigned char existing[4];
+  colorArr->GetTypedTuple(n, existing);
+  unsigned char existingFlag = flagArr->GetValue(n);
+  bool changed = (existingFlag == 0) || existing[0] != rgbaBytes[0] || existing[1] != rgbaBytes[1] //
+                 || existing[2] != rgbaBytes[2] || existing[3] != rgbaBytes[3];
+  if (!changed)
+  {
+    return;
+  }
+  colorArr->SetTypedTuple(n, rgbaBytes);
+  flagArr->SetValue(n, 1);
+  colorArr->Modified();
+  flagArr->Modified();
+  this->ControlPointDataSet->Modified();
+  this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, static_cast<void*>(&n));
+  this->StorableModifiedTime.Modified();
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::GetNthControlPointColor(int n, double rgba[4])
+{
+  rgba[0] = 0.0;
+  rgba[1] = 0.0;
+  rgba[2] = 0.0;
+  rgba[3] = 0.0;
+  if (!this->GetNthControlPointCustomLog(n, "GetNthControlPointColor"))
+  {
+    return false;
+  }
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  if (!flagArr || !colorArr || flagArr->GetNumberOfTuples() <= n || colorArr->GetNumberOfTuples() <= n)
+  {
+    return false;
+  }
+  if (flagArr->GetValue(n) == 0)
+  {
+    return false;
+  }
+  unsigned char rgbaBytes[4];
+  colorArr->GetTypedTuple(n, rgbaBytes);
+  rgba[0] = rgbaBytes[0] / 255.0;
+  rgba[1] = rgbaBytes[1] / 255.0;
+  rgba[2] = rgbaBytes[2] / 255.0;
+  rgba[3] = rgbaBytes[3] / 255.0;
+  return true;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::IsNthControlPointColorOverridden(int n)
+{
+  if (!this->GetNthControlPointCustomLog(n, "IsNthControlPointColorOverridden"))
+  {
+    return false;
+  }
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+  if (!flagArr || flagArr->GetNumberOfTuples() <= n)
+  {
+    return false;
+  }
+  return flagArr->GetValue(n) != 0;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::ClearNthControlPointColor(int n)
+{
+  if (!this->GetNthControlPointCustomLog(n, "ClearNthControlPointColor"))
+  {
+    return;
+  }
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  if (!flagArr || flagArr->GetNumberOfTuples() <= n || flagArr->GetValue(n) == 0)
+  {
+    return;
+  }
+  flagArr->SetValue(n, 0);
+  if (colorArr && colorArr->GetNumberOfTuples() > n)
+  {
+    unsigned char zeros[4] = { 0, 0, 0, 0 };
+    colorArr->SetTypedTuple(n, zeros);
+    colorArr->Modified();
+  }
+  flagArr->Modified();
+  this->ControlPointDataSet->Modified();
+  this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, static_cast<void*>(&n));
+  this->StorableModifiedTime.Modified();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::ClearAllControlPointColors()
+{
+  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
+  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  if (!flagArr || flagArr->GetNumberOfTuples() == 0)
+  {
+    return;
+  }
+  bool anyWasSet = false;
+  for (int i = 0; i < flagArr->GetNumberOfTuples(); ++i)
+  {
+    if (flagArr->GetValue(i) != 0)
+    {
+      anyWasSet = true;
+      break;
+    }
+  }
+  if (!anyWasSet)
+  {
+    return;
+  }
+  flagArr->Fill(0);
+  flagArr->Modified();
+  if (colorArr)
+  {
+    colorArr->Fill(0);
+    colorArr->Modified();
+  }
+  this->ControlPointDataSet->Modified();
+  this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, nullptr);
   this->StorableModifiedTime.Modified();
 }
 
