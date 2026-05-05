@@ -337,7 +337,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     // Per-control-point color array preparation. As in 3D, we populate it
     // for Unselected and Selected pipelines (Active stays flat ActiveColor).
     const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                     && !folderOverrideActive                              //
+                                     && !folderOverrideActive                             //
                                      && (controlPointType == Unselected || controlPointType == Selected);
     vtkUnsignedCharArray* perPointColorsArray = nullptr;
     if (applyPerPointColors)
