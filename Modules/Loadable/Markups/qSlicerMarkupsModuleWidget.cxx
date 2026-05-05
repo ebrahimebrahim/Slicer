@@ -25,7 +25,9 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QModelIndex>
+#include <QColorDialog>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QSettings>
 #include <QShortcut>
 #include <QSignalMapper>
@@ -139,6 +141,7 @@ public:
     SelectedColumn = 0,
     LockedColumn,
     VisibleColumn,
+    ColorColumn,
     NameColumn,
     DescriptionColumn,
     RColumn,
@@ -197,6 +200,7 @@ qSlicerMarkupsModuleWidgetPrivate::qSlicerMarkupsModuleWidgetPrivate(qSlicerMark
   Q_Q(qSlicerMarkupsModuleWidget);
 
   this->columnLabels << qSlicerMarkupsModuleWidget::tr("Selected") << qSlicerMarkupsModuleWidget::tr("Locked") << qSlicerMarkupsModuleWidget::tr("Visible")
+                     << qSlicerMarkupsModuleWidget::tr("Color")
                      << qSlicerMarkupsModuleWidget::tr("Name") << qSlicerMarkupsModuleWidget::tr("Description") << qSlicerMarkupsModuleWidget::tr("R") //: right
                      << qSlicerMarkupsModuleWidget::tr("A")                                                                                            //: anterior
                      << qSlicerMarkupsModuleWidget::tr("S")                                                                                            //: superior
@@ -452,6 +456,13 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
   visibleHeader->setIcon(QIcon(":/Icons/Small/SlicerVisibleInvisible.png"));
   visibleHeader->setToolTip((qSlicerMarkupsModuleWidget::tr("Click in this column to show/hide control points in 2D and 3D")));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::VisibleColumn, 30);
+  // color is a small swatch (visible only when display node UseControlPointColors is enabled)
+  QTableWidgetItem* colorHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::ColorColumn);
+  colorHeader->setText(qSlicerMarkupsModuleWidget::tr("Color"));
+  colorHeader->setToolTip(qSlicerMarkupsModuleWidget::tr("Click in this column to set the per-control-point color. Right-click for batch operations. "
+                                                          "Visible only when 'Use control point colors' is enabled in the Display panel."));
+  this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, 40);
+  this->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, true);
   // position is a location bubble
   QTableWidgetItem* positionHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::PositionColumn);
   positionHeader->setText("");
@@ -462,6 +473,10 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
                                                              "- Restore: Set the control point position to its last known set position\n"
                                                              "- Clear: Clear the defined control point position, but do not delete the control point")));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::PositionColumn, 10);
+
+  // Update column visibility (Color column shown only when display node has
+  // UseControlPointColors enabled) whenever the display node changes.
+  QObject::connect(this->markupsDisplayWidget, SIGNAL(displayNodeChanged()), q, SLOT(updateWidgetFromMRML()));
 
   // listen for changes so can update mrml node
   QObject::connect(this->activeMarkupTableWidget, SIGNAL(cellChanged(int, int)), q, SLOT(onActiveMarkupTableCellChanged(int, int)));
@@ -911,6 +926,13 @@ void qSlicerMarkupsModuleWidget::updateWidgetFromMRML()
   d->activeMarkupTreeView->blockSignals(wasBlocked);
   d->markupsDisplayWidget->setMRMLMarkupsNode(d->MarkupsNode);
 
+  // Show the per-point Color column only when the display node has
+  // UseControlPointColors enabled, so the table is uncluttered for users
+  // who don't use the feature.
+  vtkMRMLMarkupsDisplayNode* dispNodeForColorColumn = d->markupsDisplayNode();
+  bool showColorColumn = (dispNodeForColorColumn != nullptr && dispNodeForColorColumn->GetUseControlPointColors());
+  d->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, !showColorColumn);
+
   // Color legend
   vtkMRMLColorLegendDisplayNode* colorLegendNode = nullptr;
   vtkMRMLDisplayNode* displayNode = d->markupsDisplayWidget->mrmlMarkupsDisplayNode();
@@ -1128,6 +1150,55 @@ void qSlicerMarkupsModuleWidget::updateRow(int controlPointIndex)
   {
     item->setData(Qt::UserRole, QVariant(visible));
     item->setData(Qt::DecorationRole, visible ? d->SlicerVisibleIcon : d->SlicerInvisibleIcon);
+  }
+  if (isNewItem)
+  {
+    d->activeMarkupTableWidget->setItem(controlPointIndex, column, item);
+  }
+
+  // per-point color swatch
+  column = qSlicerMarkupsModuleWidgetPrivate::ColorColumn;
+  item = d->activeMarkupTableWidget->item(controlPointIndex, column);
+  isNewItem = false;
+  if (!item)
+  {
+    item = new QTableWidgetItem();
+    item->setFlags(item->flags() & ~Qt::ItemIsEditable & ~Qt::ItemIsUserCheckable);
+    isNewItem = true;
+  }
+  bool colorOverridden = markupsNode->IsNthControlPointColorOverridden(controlPointIndex);
+  double rgba[4] = { 0.0, 0.0, 0.0, 0.0 };
+  if (colorOverridden)
+  {
+    markupsNode->GetNthControlPointColor(controlPointIndex, rgba);
+  }
+  // pack overridden flag + rgba into a QVariant for staleness check
+  QList<QVariant> stateKey;
+  stateKey << colorOverridden << rgba[0] << rgba[1] << rgba[2] << rgba[3];
+  if (isNewItem || item->data(Qt::UserRole) != QVariant(stateKey))
+  {
+    item->setData(Qt::UserRole, QVariant(stateKey));
+    if (colorOverridden)
+    {
+      QPixmap swatch(16, 16);
+      swatch.fill(QColor::fromRgbF(rgba[0], rgba[1], rgba[2], rgba[3]));
+      item->setData(Qt::DecorationRole, swatch);
+      item->setToolTip(qSlicerMarkupsModuleWidget::tr("Per-point color set. Click to change; right-click for batch operations."));
+    }
+    else
+    {
+      // hollow swatch for "no override"
+      QPixmap swatch(16, 16);
+      swatch.fill(Qt::transparent);
+      QPainter painter(&swatch);
+      painter.setPen(QColor(150, 150, 150));
+      painter.drawRect(0, 0, 15, 15);
+      painter.drawLine(0, 0, 15, 15);
+      painter.drawLine(15, 0, 0, 15);
+      painter.end();
+      item->setData(Qt::DecorationRole, swatch);
+      item->setToolTip(qSlicerMarkupsModuleWidget::tr("No per-point color (uses display-node fallback). Click to set; right-click for batch operations."));
+    }
   }
   if (isNewItem)
   {
@@ -2176,6 +2247,36 @@ void qSlicerMarkupsModuleWidget::onActiveMarkupTableCellClicked(QTableWidgetItem
       item->setData(Qt::UserRole, QVariant(vtkMRMLMarkupsNode::PositionDefined));
     }
   }
+  else if (column == qSlicerMarkupsModuleWidgetPrivate::ColorColumn)
+  {
+    // Open a color dialog for this control point. Pre-fill with the
+    // existing per-point color (or the display node's Unselected color as a
+    // sensible starting point if the point has no override yet).
+    QColor initial(255, 255, 255);
+    double rgba[4] = { 1.0, 1.0, 1.0, 1.0 };
+    if (d->MarkupsNode->GetNthControlPointColor(row, rgba))
+    {
+      initial = QColor::fromRgbF(rgba[0], rgba[1], rgba[2], rgba[3]);
+    }
+    else
+    {
+      vtkMRMLMarkupsDisplayNode* dispNode = d->markupsDisplayNode();
+      if (dispNode)
+      {
+        double fallback[3] = { 1.0, 1.0, 1.0 };
+        dispNode->GetColor(fallback);
+        initial = QColor::fromRgbF(fallback[0], fallback[1], fallback[2], 1.0);
+      }
+    }
+    QColor chosen = QColorDialog::getColor(initial,
+                                           this,
+                                           tr("Select per-point color"),
+                                           QColorDialog::ShowAlphaChannel);
+    if (chosen.isValid())
+    {
+      d->MarkupsNode->SetNthControlPointColor(row, chosen.redF(), chosen.greenF(), chosen.blueF(), chosen.alphaF());
+    }
+  }
   d->MarkupsNode->SetControlPointPlacementStartIndex(row);
 }
 
@@ -2253,10 +2354,101 @@ void qSlicerMarkupsModuleWidget::onRightClickActiveMarkupTableWidget(QPoint pos)
   menu.addAction(unsetPointAction);
   QObject::connect(unsetPointAction, SIGNAL(triggered()), this, SLOT(onUnsetControlPointPushButtonClicked()));
 
+  // Per-point color: only useful when UseControlPointColors is enabled on
+  // the display node. Always offered, but the user only sees a visual effect
+  // when the toggle is on (the column will be hidden otherwise).
+  if (d->MarkupsNode)
+  {
+    menu.addSeparator();
+    QAction* setColorAction = new QAction(tr("Set color of highlighted control point(s)..."), &menu);
+    menu.addAction(setColorAction);
+    QObject::connect(setColorAction, SIGNAL(triggered()), this, SLOT(onSetColorOfHighlightedControlPointsTriggered()));
+    QAction* clearColorAction = new QAction(tr("Clear color of highlighted control point(s)"), &menu);
+    menu.addAction(clearColorAction);
+    QObject::connect(clearColorAction, SIGNAL(triggered()), this, SLOT(onClearColorOfHighlightedControlPointsTriggered()));
+  }
+
   menu.addSeparator();
   this->addSelectedCoordinatesToMenu(&menu);
 
   menu.exec(QCursor::pos());
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onSetColorOfHighlightedControlPointsTriggered()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  if (!d->MarkupsNode)
+  {
+    return;
+  }
+  // Collect unique selected rows.
+  QList<QTableWidgetItem*> selectedItems = d->activeMarkupTableWidget->selectedItems();
+  QList<int> rows;
+  for (int i = 0; i < selectedItems.size(); ++i)
+  {
+    int row = selectedItems.at(i)->row();
+    if (!rows.contains(row))
+    {
+      rows << row;
+    }
+  }
+  if (rows.isEmpty())
+  {
+    return;
+  }
+  std::sort(rows.begin(), rows.end());
+  // Pre-fill with the first row's existing color (or the display-node Color
+  // if no override yet).
+  QColor initial(255, 255, 255);
+  double rgba[4] = { 1.0, 1.0, 1.0, 1.0 };
+  if (d->MarkupsNode->GetNthControlPointColor(rows.first(), rgba))
+  {
+    initial = QColor::fromRgbF(rgba[0], rgba[1], rgba[2], rgba[3]);
+  }
+  else
+  {
+    vtkMRMLMarkupsDisplayNode* dispNode = d->markupsDisplayNode();
+    if (dispNode)
+    {
+      double fallback[3] = { 1.0, 1.0, 1.0 };
+      dispNode->GetColor(fallback);
+      initial = QColor::fromRgbF(fallback[0], fallback[1], fallback[2], 1.0);
+    }
+  }
+  QColor chosen = QColorDialog::getColor(initial, this, tr("Select per-point color (applies to all selected)"), QColorDialog::ShowAlphaChannel);
+  if (!chosen.isValid())
+  {
+    return;
+  }
+  for (int row : rows)
+  {
+    d->MarkupsNode->SetNthControlPointColor(row, chosen.redF(), chosen.greenF(), chosen.blueF(), chosen.alphaF());
+  }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onClearColorOfHighlightedControlPointsTriggered()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  if (!d->MarkupsNode)
+  {
+    return;
+  }
+  QList<QTableWidgetItem*> selectedItems = d->activeMarkupTableWidget->selectedItems();
+  QList<int> rows;
+  for (int i = 0; i < selectedItems.size(); ++i)
+  {
+    int row = selectedItems.at(i)->row();
+    if (!rows.contains(row))
+    {
+      rows << row;
+    }
+  }
+  for (int row : rows)
+  {
+    d->MarkupsNode->ClearNthControlPointColor(row);
+  }
 }
 
 //-----------------------------------------------------------------------------

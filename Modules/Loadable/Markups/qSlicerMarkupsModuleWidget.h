@@ -191,6 +191,10 @@ public slots:
   void onRightClickActiveMarkupTableWidget(QPoint pos);
   /// Add the coordinates of the currently selected markups as strings to the given menu, then add a separator
   void addSelectedCoordinatesToMenu(QMenu* menu);
+  /// Open a color picker and apply the chosen color to all currently selected control points.
+  void onSetColorOfHighlightedControlPointsTriggered();
+  /// Clear the per-point color override on all currently selected control points.
+  void onClearColorOfHighlightedControlPointsTriggered();
   /// Jump slices action slot
   void onJumpSlicesActionTriggered();
   /// Refocus cameras action slot
