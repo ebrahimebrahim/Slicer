@@ -268,7 +268,7 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     folderOverrideActiveCurve = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
   }
   const bool useCpColorsForLine = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                  && !folderOverrideActiveCurve                          //
+                                  && !folderOverrideActiveCurve                        //
                                   && !this->MarkupsDisplayNode->GetScalarVisibility();
 
   if (useCpColorsForLine && curveWorld && curveWorld->GetNumberOfPoints() > 0)
@@ -290,8 +290,7 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
       fallbackColor[1] = widgetColor[1];
       fallbackColor[2] = widgetColor[2];
       vtkIdType nCurve = curveWorld->GetNumberOfPoints();
-      vtkSmartPointer<vtkUnsignedCharArray> arr =
-        vtkUnsignedCharArray::SafeDownCast(curveWorld->GetPointData()->GetArray("ControlPointColors"));
+      vtkSmartPointer<vtkUnsignedCharArray> arr = vtkUnsignedCharArray::SafeDownCast(curveWorld->GetPointData()->GetArray("ControlPointColors"));
       if (!arr || arr->GetNumberOfComponents() != 4)
       {
         arr = vtkSmartPointer<vtkUnsignedCharArray>::New();
@@ -344,12 +343,10 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
           double d = d1 + d2;
           t = (d > 1e-9) ? d1 / d : 0.0;
         }
-        unsigned char rgba[4] = {
-          static_cast<unsigned char>((prevRgba[0] * (1.0 - t) + nextRgba[0] * t) * 255.0 + 0.5),
-          static_cast<unsigned char>((prevRgba[1] * (1.0 - t) + nextRgba[1] * t) * 255.0 + 0.5),
-          static_cast<unsigned char>((prevRgba[2] * (1.0 - t) + nextRgba[2] * t) * 255.0 + 0.5),
-          static_cast<unsigned char>((prevRgba[3] * (1.0 - t) + nextRgba[3] * t) * 255.0 + 0.5)
-        };
+        unsigned char rgba[4] = { static_cast<unsigned char>((prevRgba[0] * (1.0 - t) + nextRgba[0] * t) * 255.0 + 0.5),
+                                  static_cast<unsigned char>((prevRgba[1] * (1.0 - t) + nextRgba[1] * t) * 255.0 + 0.5),
+                                  static_cast<unsigned char>((prevRgba[2] * (1.0 - t) + nextRgba[2] * t) * 255.0 + 0.5),
+                                  static_cast<unsigned char>((prevRgba[3] * (1.0 - t) + nextRgba[3] * t) * 255.0 + 0.5) };
         arr->SetTypedTuple(i, rgba);
       }
       arr->Modified();

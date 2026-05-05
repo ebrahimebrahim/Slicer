@@ -329,7 +329,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
       folderOverrideActive = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
     }
     const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                     && !folderOverrideActive                              //
+                                     && !folderOverrideActive                             //
                                      && (controlPointType == Unselected || controlPointType == Selected);
     vtkUnsignedCharArray* perPointColorsArray = nullptr;
     if (applyPerPointColors)

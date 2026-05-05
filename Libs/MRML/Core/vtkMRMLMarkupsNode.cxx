@@ -2119,12 +2119,10 @@ void vtkMRMLMarkupsNode::SetNthControlPointColor(int n, double r, double g, doub
     return;
   }
   auto clamp01 = [](double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); };
-  unsigned char rgbaBytes[4] = {
-    static_cast<unsigned char>(clamp01(r) * 255.0 + 0.5),
-    static_cast<unsigned char>(clamp01(g) * 255.0 + 0.5),
-    static_cast<unsigned char>(clamp01(b) * 255.0 + 0.5),
-    static_cast<unsigned char>(clamp01(a) * 255.0 + 0.5)
-  };
+  unsigned char rgbaBytes[4] = { static_cast<unsigned char>(clamp01(r) * 255.0 + 0.5),
+                                 static_cast<unsigned char>(clamp01(g) * 255.0 + 0.5),
+                                 static_cast<unsigned char>(clamp01(b) * 255.0 + 0.5),
+                                 static_cast<unsigned char>(clamp01(a) * 255.0 + 0.5) };
   int targetSize = this->GetNumberOfControlPoints();
   vtkPointData* pd = this->ControlPointDataSet->GetPointData();
   vtkUnsignedCharArray* colorArr = EnsureUCharArray(pd, CP_COLOR_ARRAY, 4, targetSize);
