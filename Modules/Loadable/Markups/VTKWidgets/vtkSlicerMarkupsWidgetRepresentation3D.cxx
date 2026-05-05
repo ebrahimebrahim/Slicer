@@ -43,6 +43,7 @@
 #include "vtkStringArray.h"
 #include "vtkTextActor.h"
 #include "vtkTextProperty.h"
+#include "vtkUnsignedCharArray.h"
 
 // MRML includes
 #include <vtkMRMLAbstractThreeDViewDisplayableManager.h>
@@ -318,6 +319,45 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     controlPoints->LabelsPriority->SetNumberOfValues(0);
     controlPoints->ControlPointIndices->SetNumberOfValues(0);
 
+    // Decide whether this pipeline should consume per-control-point colors.
+    // Active pipeline always uses the flat ActiveColor (interaction feedback).
+    // Folder display override wins above all (existing behaviour preserved).
+    bool folderOverrideActive = false;
+    if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
+    {
+      vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
+      folderOverrideActive = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
+    }
+    const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
+                                     && !folderOverrideActive                              //
+                                     && (controlPointType == Unselected || controlPointType == Selected);
+    vtkUnsignedCharArray* perPointColorsArray = nullptr;
+    if (applyPerPointColors)
+    {
+      perPointColorsArray = vtkUnsignedCharArray::SafeDownCast(controlPoints->ControlPointsPolyData->GetPointData()->GetArray("ControlPointColors"));
+      if (!perPointColorsArray)
+      {
+        vtkNew<vtkUnsignedCharArray> newArr;
+        newArr->SetName("ControlPointColors");
+        newArr->SetNumberOfComponents(4);
+        controlPoints->ControlPointsPolyData->GetPointData()->AddArray(newArr);
+        perPointColorsArray = newArr;
+      }
+      perPointColorsArray->SetNumberOfTuples(0);
+    }
+    else
+    {
+      controlPoints->ControlPointsPolyData->GetPointData()->RemoveArray("ControlPointColors");
+    }
+    double fallbackColor[3] = { 1.0, 1.0, 1.0 };
+    if (applyPerPointColors)
+    {
+      double* widgetColor = this->GetWidgetColor(controlPointType);
+      fallbackColor[0] = widgetColor[0];
+      fallbackColor[1] = widgetColor[1];
+      fallbackColor[2] = widgetColor[2];
+    }
+
     for (int pointIndex = 0; pointIndex < numPoints; ++pointIndex)
     {
       if (!(markupsNode->GetNthControlPointPositionVisibility(pointIndex) //
@@ -367,6 +407,36 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
       controlPoints->Labels->InsertNextValue(markupsNode->GetNthControlPointLabel(pointIndex));
       controlPoints->LabelsPriority->InsertNextValue(std::to_string(pointIndex));
       controlPoints->ControlPointIndices->InsertNextValue(pointIndex);
+
+      if (perPointColorsArray)
+      {
+        unsigned char rgba[4];
+        double rgbad[4];
+        if (markupsNode->GetNthControlPointColor(pointIndex, rgbad))
+        {
+          rgba[0] = static_cast<unsigned char>(rgbad[0] * 255.0 + 0.5);
+          rgba[1] = static_cast<unsigned char>(rgbad[1] * 255.0 + 0.5);
+          rgba[2] = static_cast<unsigned char>(rgbad[2] * 255.0 + 0.5);
+          rgba[3] = static_cast<unsigned char>(rgbad[3] * 255.0 + 0.5);
+        }
+        else
+        {
+          rgba[0] = static_cast<unsigned char>(fallbackColor[0] * 255.0 + 0.5);
+          rgba[1] = static_cast<unsigned char>(fallbackColor[1] * 255.0 + 0.5);
+          rgba[2] = static_cast<unsigned char>(fallbackColor[2] * 255.0 + 0.5);
+          rgba[3] = 255;
+        }
+        perPointColorsArray->InsertNextTypedTuple(rgba);
+      }
+    }
+    if (perPointColorsArray)
+    {
+      perPointColorsArray->Modified();
+      controlPoints->ControlPointsPolyData->GetPointData()->SetActiveScalars("ControlPointColors");
+    }
+    else
+    {
+      controlPoints->ControlPointsPolyData->GetPointData()->SetActiveScalars(nullptr);
     }
 
     if (controlPoints->ControlPointIndices->GetNumberOfValues() > 0)
@@ -619,6 +689,15 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode*
     hierarchyOpacity = vtkMRMLFolderDisplayNode::GetHierarchyOpacity(displayableNode);
   }
 
+  // Folder override status (mirrored in UpdateAllPointsAndLabelsFromMRML).
+  bool folderOverrideActive = false;
+  if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
+  {
+    vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
+    folderOverrideActive = (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode) != nullptr);
+  }
+  const bool useControlPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() && !folderOverrideActive;
+
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
   {
     double* color = this->GetWidgetColor(controlPointType);
@@ -627,6 +706,29 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode*
     ControlPointsPipeline3D* controlPoints = this->GetControlPointsPipeline(controlPointType);
     controlPoints->Property->SetColor(color);
     controlPoints->Property->SetOpacity(opacity);
+
+    // Per-control-point color: Unselected and Selected pipelines consume the
+    // ControlPointColors point-data scalars on their polydata via direct RGB
+    // mapping. Active stays flat (ActiveColor) so interaction feedback is
+    // preserved.
+    const bool perPointForThisPipeline = useControlPointColors //
+                                         && (controlPointType == Unselected || controlPointType == Selected);
+    if (perPointForThisPipeline)
+    {
+      controlPoints->GlyphMapper->SetScalarVisibility(true);
+      controlPoints->GlyphMapper->SetScalarModeToUsePointFieldData();
+      controlPoints->GlyphMapper->SelectColorArray("ControlPointColors");
+      controlPoints->GlyphMapper->SetColorModeToDirectScalars();
+      controlPoints->OccludedGlyphMapper->SetScalarVisibility(true);
+      controlPoints->OccludedGlyphMapper->SetScalarModeToUsePointFieldData();
+      controlPoints->OccludedGlyphMapper->SelectColorArray("ControlPointColors");
+      controlPoints->OccludedGlyphMapper->SetColorModeToDirectScalars();
+    }
+    else
+    {
+      controlPoints->GlyphMapper->SetScalarVisibility(false);
+      controlPoints->OccludedGlyphMapper->SetScalarVisibility(false);
+    }
 
     controlPoints->TextProperty->ShallowCopy(this->MarkupsDisplayNode->GetTextProperty());
     if (this->GetApplicationLogic())
