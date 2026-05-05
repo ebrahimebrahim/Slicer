@@ -207,6 +207,31 @@ Run `pre-commit run --all-files` to check formatting locally. CI runs exactly th
   - Each invocation starts with a fresh `slicer` namespace. Submodules like `slicer.packaging`
     that aren't auto-imported at startup must be explicitly imported at the top of the code
     string — not just once in a long-running console session.
+- **Adding a member to an MRML Core class requires a full rebuild.** Building
+  just `MRMLCore`/`MRMLCorePython` leaves dependent modules with a stale class
+  layout and they crash silently on access (typical symptom: `selectModule()`
+  on the affected node's module). Run `cmake --build .` with no target from
+  the inner `Slicer-build/` after any header change in `Libs/MRML/Core/`.
+- **`vtkAOSDataArrayTemplate::SetNumberOfTuples` does not reliably preserve
+  old data on grow.** Reading existing tuples after a grow can return
+  garbage. Snapshot into a `std::vector<double>` first, resize, then
+  `SetTuple` back from the snapshot.
+- **`vtkGlyph2D` quirks.** It does not propagate input point scalars to its
+  output (use `vtkGlyph3D` or replicate scalars per per-glyph vertex block).
+  It defaults to `SCALE_BY_SCALAR`, so any input scalar (including a 4-comp
+  RGBA color array) is read as a scale factor — call
+  `SetScaleModeToDataScalingOff()`. `vtkPolyDataMapper2D` has no
+  `SelectColorArray`; drive coloring via the input polydata's active scalars.
+- **`--testing` aborts on any module instantiation failure.** A missing
+  dependency in any installed Python plugin (e.g. `highdicom` in
+  `DICOMTID1500Plugin`) makes Slicer abort before running your script —
+  every Python ctest will fail. Re-run with `--no-main-window --python-script`
+  to confirm whether the test script itself works. The launcher's
+  `error: SlicerApp-real exit abnormally` is not a crash signal, just any
+  non-zero exit code.
+- **Commit each working phase before bisecting.** `git checkout <file>`
+  deletes uncommitted work and reflog won't bring it back. Bisect with
+  `git checkout <commit>` instead.
 
 ## Prefer Existing APIs
 
