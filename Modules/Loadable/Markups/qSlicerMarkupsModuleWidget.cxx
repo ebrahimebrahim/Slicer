@@ -200,10 +200,10 @@ qSlicerMarkupsModuleWidgetPrivate::qSlicerMarkupsModuleWidgetPrivate(qSlicerMark
   Q_Q(qSlicerMarkupsModuleWidget);
 
   this->columnLabels << qSlicerMarkupsModuleWidget::tr("Selected") << qSlicerMarkupsModuleWidget::tr("Locked") << qSlicerMarkupsModuleWidget::tr("Visible")
-                     << qSlicerMarkupsModuleWidget::tr("Color")
-                     << qSlicerMarkupsModuleWidget::tr("Name") << qSlicerMarkupsModuleWidget::tr("Description") << qSlicerMarkupsModuleWidget::tr("R") //: right
-                     << qSlicerMarkupsModuleWidget::tr("A")                                                                                            //: anterior
-                     << qSlicerMarkupsModuleWidget::tr("S")                                                                                            //: superior
+                     << qSlicerMarkupsModuleWidget::tr("Color") << qSlicerMarkupsModuleWidget::tr("Name") << qSlicerMarkupsModuleWidget::tr("Description")
+                     << qSlicerMarkupsModuleWidget::tr("R") //: right
+                     << qSlicerMarkupsModuleWidget::tr("A") //: anterior
+                     << qSlicerMarkupsModuleWidget::tr("S") //: superior
                      << qSlicerMarkupsModuleWidget::tr("Position");
 
   this->newMarkupWithCurrentDisplayPropertiesAction = nullptr;
@@ -460,7 +460,7 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
   QTableWidgetItem* colorHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::ColorColumn);
   colorHeader->setText(qSlicerMarkupsModuleWidget::tr("Color"));
   colorHeader->setToolTip(qSlicerMarkupsModuleWidget::tr("Click in this column to set the per-control-point color. Right-click for batch operations. "
-                                                          "Visible only when 'Use control point colors' is enabled in the Display panel."));
+                                                         "Visible only when 'Use control point colors' is enabled in the Display panel."));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, 40);
   this->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, true);
   // position is a location bubble
@@ -2268,10 +2268,7 @@ void qSlicerMarkupsModuleWidget::onActiveMarkupTableCellClicked(QTableWidgetItem
         initial = QColor::fromRgbF(fallback[0], fallback[1], fallback[2], 1.0);
       }
     }
-    QColor chosen = QColorDialog::getColor(initial,
-                                           this,
-                                           tr("Select per-point color"),
-                                           QColorDialog::ShowAlphaChannel);
+    QColor chosen = QColorDialog::getColor(initial, this, tr("Select per-point color"), QColorDialog::ShowAlphaChannel);
     if (chosen.isValid())
     {
       d->MarkupsNode->SetNthControlPointColor(row, chosen.redF(), chosen.greenF(), chosen.blueF(), chosen.alphaF());
