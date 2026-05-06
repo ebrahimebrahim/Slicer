@@ -260,10 +260,9 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     }
   }
 
-  // Per-control-point line gradient: when UseControlPointColors is on and no
-  // curve-side scalar coloring is active, propagate the per-point colors onto
-  // the curve world polydata as a PerPointColorArrayName RGBA point scalar
-  // array, interpolating between adjacent control points so the line gradients
+  // Per-control-point line gradient: when UseControlPointColors is on and
+  // no curve-side scalar is active, write per-point colors onto the curve
+  // world polydata as a PerPointColorArrayName RGBA array, interpolated
   // along each segment.
   const bool useCpColorsForLine = this->MarkupsDisplayNode->GetUseControlPointColors() //
                                   && !this->IsFolderDisplayOverrideActive()            //
@@ -282,9 +281,9 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     }
     if (anyOverride)
     {
-      // Precompute per-control-point RGBA + world position once, so the
-      // per-curve-point loop below avoids repeated string-keyed array
-      // lookups (curves can have 1000+ interpolated points).
+      // Cache per-CP RGBA + world position once; the curve-point loop below
+      // would otherwise repeat string-keyed array lookups for ~1000 points
+      // per curve.
       double fallbackRgba[4] = { 1.0, 1.0, 1.0, 1.0 };
       double* widgetColor = this->GetWidgetColor(Unselected);
       fallbackRgba[0] = widgetColor[0];

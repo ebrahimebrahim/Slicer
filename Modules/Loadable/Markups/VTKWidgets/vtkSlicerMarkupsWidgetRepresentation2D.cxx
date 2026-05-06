@@ -60,10 +60,9 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPi
   this->Glypher = vtkSmartPointer<vtkGlyph2D>::New();
   this->Glypher->SetInputData(this->ControlPointsPolyData);
   this->Glypher->SetScaleFactor(1.0);
-  // Avoid scaling glyphs by an input scalar — control point glyph size is
-  // controlled separately. Without this, any input scalar (including the
-  // per-control-point RGBA color array) would be interpreted as a scale
-  // factor and produce huge glyphs.
+  // Avoid scaling glyphs by an input scalar -- without this, the per-point
+  // RGBA color array would be interpreted as a scale factor and produce
+  // huge glyphs.
   this->Glypher->SetScaleModeToDataScalingOff();
 
   // By default the Points are rendered as spheres
@@ -327,8 +326,8 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     controlPoints->Labels->Reset();
     controlPoints->LabelsPriority->Reset();
 
-    // Per-control-point color array preparation. As in 3D, we populate it
-    // for Unselected and Selected pipelines (Active stays flat ActiveColor).
+    // Per-point color array populated for Unselected and Selected pipelines
+    // (Active stays flat ActiveColor).
     const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
                                      && !folderOverrideActive                             //
                                      && (controlPointType == Unselected || controlPointType == Selected);
@@ -492,8 +491,8 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->Modified();
     controlPoints->ControlPointsPolyData->Modified();
 
-    // vtkGlyph2D does not propagate input point scalars to its output, so we
-    // run the filter explicitly and replicate input scalars per output vertex.
+    // vtkGlyph2D does not propagate input point scalars to its output. Run
+    // the filter explicitly and replicate input scalars per output vertex.
     if (perPointColorsArray && controlPoints->ControlPoints->GetNumberOfPoints() > 0)
     {
       controlPoints->Glypher->Update();

@@ -74,10 +74,8 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   this->CurveInputPoly->SetPoints(curveInputPoints);
 
   // Control point dataset: one polydata point per control point in node-local
-  // coordinates. The PointData container holds per-control-point arrays
-  // (e.g. `Color`, `ColorOverridden`). Arrays start absent; they are created
-  // lazily by SetNthControlPointColor and friends, after which they are kept
-  // in sync with NumberOfControlPoints.
+  // coords. PointData arrays (Color, ColorOverridden) are created lazily by
+  // SetNthControlPointColor and synced with NumberOfControlPoints thereafter.
   this->ControlPointDataSet = vtkSmartPointer<vtkPolyData>::New();
   vtkNew<vtkPoints> controlPointDataSetPoints;
   this->ControlPointDataSet->SetPoints(controlPointDataSetPoints);
@@ -237,10 +235,9 @@ void vtkMRMLMarkupsNode::CopyContent(vtkMRMLNode* aSource, bool deepCopy /*=true
   }
   this->FixedNumberOfControlPoints = wasFixedNumberOfControlPoints;
 
-  // Copy per-control-point PointData arrays (e.g. Color, ColorOverridden).
-  // The dataset's points were already set up by AddControlPoint above; here
-  // we deep-copy named arrays from the source so per-point overrides
-  // round-trip through CopyContent.
+  // Copy per-control-point PointData arrays (Color, ColorOverridden, ...).
+  // The dataset's points were set up by AddControlPoint above; deep-copy
+  // named arrays from source so per-point overrides round-trip.
   vtkPointData* sourcePd = source->ControlPointDataSet->GetPointData();
   vtkPointData* destPd = this->ControlPointDataSet->GetPointData();
   for (int a = 0; a < sourcePd->GetNumberOfArrays(); ++a)
@@ -1922,11 +1919,9 @@ namespace
 const char* CP_COLOR_ARRAY = "Color";
 const char* CP_COLOR_OVERRIDDEN_ARRAY = "ColorOverridden";
 
-// Snapshot all tuple values of arr into a flat std::vector<double> of size
-// (numTuples * numComponents). Reads existing values via GetTuple before any
-// resize, so callers can rebuild the array from the snapshot without relying
-// on SetNumberOfTuples preserving old data (vtkAOSDataArrayTemplate may
-// reallocate the buffer on grow).
+// Read tuples via GetTuple before any resize so callers can rebuild from the
+// snapshot without relying on SetNumberOfTuples preserving the buffer
+// (vtkAOSDataArrayTemplate may reallocate on grow).
 void SnapshotArrayValues(vtkDataArray* arr, std::vector<double>& outFlat)
 {
   int nt = static_cast<int>(arr->GetNumberOfTuples());

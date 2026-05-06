@@ -596,19 +596,17 @@ public:
   ///@{
   /// Per-control-point color override.
   ///
-  /// When `vtkMRMLMarkupsDisplayNode::UseControlPointColors` is enabled, each control point
-  /// for which a color has been set is rendered in that color, overriding the display node's
-  /// `Color` (unselected) and `SelectedColor` (selected). The display node's `ActiveColor`
-  /// still wins for the active control point so interaction feedback is preserved.
-  /// Folder display overrides still trump per-point color (existing behaviour).
-  ///
-  /// Storage: the per-point color and override flag live as PointData arrays on the
-  /// control point dataset (\sa GetControlPointDataSet). Specifically
+  /// Stored as PointData arrays on the control point dataset
+  /// (\sa GetControlPointDataSet):
   ///  - `Color` (vtkUnsignedCharArray, 4 components, RGBA in 0-255)
   ///  - `ColorOverridden` (vtkUnsignedCharArray, 1 component, 0 or 1)
-  /// These arrays are kept in sync with `NumberOfControlPoints` automatically across
-  /// Add/Insert/Remove/Swap/RemoveAll. The `Color` array name is reserved for this
-  /// convenience API; user-added per-point arrays should use other names.
+  /// The arrays are kept in sync with `NumberOfControlPoints` automatically
+  /// across Add/Insert/Remove/Swap/RemoveAll. The `Color` array name is
+  /// reserved for this convenience API; user-added per-point arrays should
+  /// use other names.
+  ///
+  /// \sa vtkMRMLMarkupsDisplayNode::UseControlPointColors for the toggle
+  /// that activates per-point color rendering and the precedence rules.
   void SetNthControlPointColor(int n, double r, double g, double b, double a = 1.0);
   void SetNthControlPointColor(int n, const double rgba[4]);
   /// Returns true if the control point has a per-point color override; rgba is filled in.
@@ -624,12 +622,11 @@ public:
   ///@}
 
   /// Get the control point dataset: a vtkPolyData mirroring control points
-  /// (one polydata point per control point, in node-local coordinates) whose
-  /// PointData container holds per-control-point arrays (e.g. `Color`,
-  /// `ColorOverridden`). Power users can attach additional named arrays here
-  /// for measurement-based per-point coloring (a follow-up feature). The
-  /// dataset's points and any PointData arrays are kept in sync with
-  /// `NumberOfControlPoints` by this node.
+  /// (one point per control point, in node-local coordinates) whose
+  /// PointData container holds per-control-point arrays such as `Color` and
+  /// `ColorOverridden`. Additional named arrays can be attached for
+  /// measurement-based per-point coloring. Points and PointData arrays are
+  /// kept in sync with `NumberOfControlPoints` by this node.
   vtkPolyData* GetControlPointDataSet();
 
   /// Returns true since can apply non linear transforms
@@ -1016,7 +1013,7 @@ protected:
 
   /// Resize all PointData arrays on the control point dataset to match
   /// `NumberOfControlPoints`. Newly-grown entries are zero-initialised.
-  /// Empty arrays (size 0) are left alone — they participate in resizing
+  /// Empty arrays (size 0) are left alone; they participate in resizing
   /// only once they have any tuples written.
   void SyncControlPointDataSetArrays();
 

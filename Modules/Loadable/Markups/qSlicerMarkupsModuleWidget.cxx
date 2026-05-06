@@ -474,8 +474,7 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
                                                              "- Clear: Clear the defined control point position, but do not delete the control point")));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::PositionColumn, 10);
 
-  // Update column visibility (Color column shown only when display node has
-  // UseControlPointColors enabled) whenever the display node changes.
+  // Re-evaluate Color column visibility on display-node changes.
   QObject::connect(this->markupsDisplayWidget, SIGNAL(displayNodeChanged()), q, SLOT(updateWidgetFromMRML()));
 
   // listen for changes so can update mrml node
@@ -926,9 +925,8 @@ void qSlicerMarkupsModuleWidget::updateWidgetFromMRML()
   d->activeMarkupTreeView->blockSignals(wasBlocked);
   d->markupsDisplayWidget->setMRMLMarkupsNode(d->MarkupsNode);
 
-  // Show the per-point Color column only when the display node has
-  // UseControlPointColors enabled, so the table is uncluttered for users
-  // who don't use the feature.
+  // Show the Color column only when UseControlPointColors is enabled on
+  // the display node.
   vtkMRMLMarkupsDisplayNode* dispNodeForColorColumn = d->markupsDisplayNode();
   bool showColorColumn = (dispNodeForColorColumn != nullptr && dispNodeForColorColumn->GetUseControlPointColors());
   d->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::ColorColumn, !showColorColumn);
@@ -2250,8 +2248,8 @@ void qSlicerMarkupsModuleWidget::onActiveMarkupTableCellClicked(QTableWidgetItem
   else if (column == qSlicerMarkupsModuleWidgetPrivate::ColorColumn)
   {
     // Open a color dialog for this control point. Pre-fill with the
-    // existing per-point color (or the display node's Unselected color as a
-    // sensible starting point if the point has no override yet).
+    // existing per-point color, or the display node's Unselected color as
+    // the dialog default if the point has no override yet.
     QColor initial(255, 255, 255);
     double rgba[4] = { 1.0, 1.0, 1.0, 1.0 };
     if (d->MarkupsNode->GetNthControlPointColor(row, rgba))
@@ -2351,9 +2349,8 @@ void qSlicerMarkupsModuleWidget::onRightClickActiveMarkupTableWidget(QPoint pos)
   menu.addAction(unsetPointAction);
   QObject::connect(unsetPointAction, SIGNAL(triggered()), this, SLOT(onUnsetControlPointPushButtonClicked()));
 
-  // Per-point color: only useful when UseControlPointColors is enabled on
-  // the display node. Always offered, but the user only sees a visual effect
-  // when the toggle is on (the column will be hidden otherwise).
+  // Per-point color actions are always offered; the visual effect only
+  // applies when UseControlPointColors is enabled.
   if (d->MarkupsNode)
   {
     menu.addSeparator();

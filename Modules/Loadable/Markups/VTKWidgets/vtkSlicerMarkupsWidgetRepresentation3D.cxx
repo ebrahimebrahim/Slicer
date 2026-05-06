@@ -320,7 +320,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     controlPoints->ControlPointIndices->SetNumberOfValues(0);
 
     // Active pipeline always uses the flat ActiveColor (interaction feedback);
-    // folder display override wins above all (existing behaviour preserved).
+    // folder display override takes precedence (existing behaviour preserved).
     const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
                                      && !this->IsFolderDisplayOverrideActive()            //
                                      && (controlPointType == Unselected || controlPointType == Selected);
@@ -693,10 +693,8 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode*
     controlPoints->Property->SetColor(color);
     controlPoints->Property->SetOpacity(opacity);
 
-    // Per-control-point color: Unselected and Selected pipelines consume the
-    // ControlPointColors point-data scalars on their polydata via direct RGB
-    // mapping. Active stays flat (ActiveColor) so interaction feedback is
-    // preserved.
+    // Unselected/Selected: direct-RGB scalars from PerPointColorArrayName.
+    // Active: flat ActiveColor (interaction feedback).
     const bool perPointForThisPipeline = useControlPointColors //
                                          && (controlPointType == Unselected || controlPointType == Selected);
     if (perPointForThisPipeline)

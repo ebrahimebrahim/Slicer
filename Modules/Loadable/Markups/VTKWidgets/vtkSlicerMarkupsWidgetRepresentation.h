@@ -148,9 +148,9 @@ public:
   //@}
 
   /// True when an ancestor subject hierarchy folder is currently overriding
-  /// this markup's display (\sa vtkMRMLFolderDisplayNode). Per-point color
-  /// rendering and similar per-display features should defer to the folder
-  /// override when this is true.
+  /// this markup's display (\sa vtkMRMLFolderDisplayNode). When true, the
+  /// folder override applies and per-display features (per-point color etc.)
+  /// should be skipped.
   bool IsFolderDisplayOverrideActive();
 
   /// Name of the per-point RGBA scalar array attached to a rendering
