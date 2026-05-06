@@ -56,10 +56,6 @@ public:
   /// Get the logic in the proper class
   vtkSlicerMarkupsLogic* markupsLogic();
 
-  /// Refresh the gui from the currently active markup node as determined by
-  /// the selection node
-  /// \sa updateWidgetFromDisplayNode()
-  void updateWidgetFromMRML();
   /// Update the GUI elements related to the display properties from MRML, by
   /// getting the display node associated with the active markups node.
   /// \sa  updateWidgetFromMRML()
@@ -104,6 +100,11 @@ public:
   Q_INVOKABLE void updateToolBar(vtkMRMLMarkupsNode* node);
 
 public slots:
+
+  /// Refresh the gui from the currently active markup node as determined by
+  /// the selection node
+  /// \sa updateWidgetFromDisplayNode()
+  void updateWidgetFromMRML();
 
   /// Respond to the scene events
   /// when a markups node is added, make it the active one in the combo box
