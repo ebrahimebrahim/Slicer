@@ -56,6 +56,10 @@ public:
   /// Get the logic in the proper class
   vtkSlicerMarkupsLogic* markupsLogic();
 
+  /// Refresh the gui from the currently active markup node as determined by
+  /// the selection node
+  /// \sa updateWidgetFromDisplayNode()
+  void updateWidgetFromMRML();
   /// Update the GUI elements related to the display properties from MRML, by
   /// getting the display node associated with the active markups node.
   /// \sa  updateWidgetFromMRML()
@@ -100,11 +104,6 @@ public:
   Q_INVOKABLE void updateToolBar(vtkMRMLMarkupsNode* node);
 
 public slots:
-
-  /// Refresh the gui from the currently active markup node as determined by
-  /// the selection node
-  /// \sa updateWidgetFromDisplayNode()
-  void updateWidgetFromMRML();
 
   /// Respond to the scene events
   /// when a markups node is added, make it the active one in the combo box
@@ -196,6 +195,8 @@ public slots:
   void onSetColorOfHighlightedControlPointsTriggered();
   /// Clear the per-point color override on all currently selected control points.
   void onClearColorOfHighlightedControlPointsTriggered();
+  /// Open a color picker pre-filled from the first row, then apply the chosen color to every row in \a rows.
+  void pickAndApplyPerPointColor(const QList<int>& rows);
 
 protected:
   /// Return the unique sorted control-point row indices currently selected in the table.
