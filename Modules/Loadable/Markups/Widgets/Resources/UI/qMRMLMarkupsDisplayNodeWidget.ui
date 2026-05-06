@@ -131,7 +131,7 @@
       <property name="bottomMargin">
        <number>0</number>
       </property>
-      <item row="12" column="0" colspan="2">
+      <item row="13" column="0" colspan="2">
        <widget class="ctkCollapsibleGroupBox" name="TextDisplayGroupBox">
         <property name="title">
          <string>Text Display</string>
@@ -236,7 +236,7 @@
         </property>
        </widget>
       </item>
-      <item row="14" column="0" colspan="2">
+      <item row="15" column="0" colspan="2">
        <widget class="ctkCollapsibleGroupBox" name="TwoDDisplayGroupBox">
         <property name="title">
          <string>2D Display</string>
@@ -454,7 +454,7 @@
         </property>
        </widget>
       </item>
-      <item row="13" column="0" colspan="2">
+      <item row="14" column="0" colspan="2">
        <widget class="ctkCollapsibleGroupBox" name="ThreeDDisplayGroupBox">
         <property name="title">
          <string>3D Display</string>
@@ -534,20 +534,20 @@
         </property>
        </widget>
       </item>
-      <item row="16" column="0">
+      <item row="12" column="0">
        <widget class="QLabel" name="useControlPointColorsLabel">
         <property name="text">
          <string>Per-point colors:</string>
         </property>
         <property name="toolTip">
-         <string>When enabled, control points that have a per-point color set (via vtkMRMLMarkupsNode::SetNthControlPointColor) override the Selected/Unselected colors above. ActiveColor still highlights the active control point. Folder display overrides still take precedence.</string>
+         <string>Show each control point in its own color. Points without a color use the Selected/Unselected colors above.</string>
         </property>
        </widget>
       </item>
-      <item row="16" column="1">
+      <item row="12" column="1">
        <widget class="QCheckBox" name="useControlPointColorsCheckBox">
         <property name="toolTip">
-         <string>Enable per-control-point colors. Points without a per-point color use the Selected/Unselected colors above as fallbacks. Use SetNthControlPointColor on the markups node to assign per-point colors.</string>
+         <string>Show each control point in its own color. Points without a color use the Selected/Unselected colors above.</string>
         </property>
         <property name="text">
          <string/>
@@ -564,7 +564,7 @@
         </property>
        </widget>
       </item>
-      <item row="15" column="0" colspan="2">
+      <item row="16" column="0" colspan="2">
        <widget class="ctkCollapsibleGroupBox" name="LineDirectionMarkersCollapsibleGroupBox">
         <property name="title">
          <string>Direction Markers</string>
