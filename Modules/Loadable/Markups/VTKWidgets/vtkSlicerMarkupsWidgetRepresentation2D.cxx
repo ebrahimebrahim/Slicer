@@ -313,6 +313,10 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
 
   int numPoints = markupsNode->GetNumberOfControlPoints();
   const bool folderOverrideActive = this->IsFolderDisplayOverrideActive();
+  // Source per-point color arrays are invariant across the pipeline loop.
+  const bool perPointColorsEnabled = this->MarkupsDisplayNode->GetUseControlPointColors() && !folderOverrideActive;
+  vtkUnsignedCharArray* srcColorArr = perPointColorsEnabled ? markupsNode->GetControlPointColorArray() : nullptr;
+  vtkUnsignedCharArray* srcFlagArr = perPointColorsEnabled ? markupsNode->GetControlPointColorOverriddenArray() : nullptr;
 
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
   {
@@ -328,8 +332,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
 
     // Per-point color array populated for Unselected and Selected pipelines
     // (Active stays flat ActiveColor).
-    const bool applyPerPointColors = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                     && !folderOverrideActive                             //
+    const bool applyPerPointColors = perPointColorsEnabled //
                                      && (controlPointType == Unselected || controlPointType == Selected);
     vtkUnsignedCharArray* perPointColorsArray = nullptr;
     if (applyPerPointColors)
@@ -349,13 +352,13 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     {
       controlPoints->ControlPointsPolyData->GetPointData()->RemoveArray(PerPointColorArrayName);
     }
-    double fallbackColor[3] = { 1.0, 1.0, 1.0 };
+    unsigned char fallbackBytes[4] = { 255, 255, 255, 255 };
     if (applyPerPointColors)
     {
       double* widgetColor = this->GetWidgetColor(controlPointType);
-      fallbackColor[0] = widgetColor[0];
-      fallbackColor[1] = widgetColor[1];
-      fallbackColor[2] = widgetColor[2];
+      fallbackBytes[0] = static_cast<unsigned char>(widgetColor[0] * 255.0 + 0.5);
+      fallbackBytes[1] = static_cast<unsigned char>(widgetColor[1] * 255.0 + 0.5);
+      fallbackBytes[2] = static_cast<unsigned char>(widgetColor[2] * 255.0 + 0.5);
     }
 
     int startIndex = 0;
@@ -458,19 +461,18 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
       if (perPointColorsArray)
       {
         unsigned char rgba[4];
-        double rgbad[4];
-        if (markupsNode->GetNthControlPointColor(pointIndex, rgbad))
+        if (srcFlagArr && srcColorArr                            //
+            && pointIndex < srcFlagArr->GetNumberOfTuples()      //
+            && pointIndex < srcColorArr->GetNumberOfTuples()     //
+            && srcFlagArr->GetValue(pointIndex) != 0)
         {
-          rgba[0] = static_cast<unsigned char>(rgbad[0] * 255.0 + 0.5);
-          rgba[1] = static_cast<unsigned char>(rgbad[1] * 255.0 + 0.5);
-          rgba[2] = static_cast<unsigned char>(rgbad[2] * 255.0 + 0.5);
-          rgba[3] = static_cast<unsigned char>(rgbad[3] * 255.0 + 0.5);
+          srcColorArr->GetTypedTuple(pointIndex, rgba);
         }
         else
         {
-          rgba[0] = static_cast<unsigned char>(fallbackColor[0] * 255.0 + 0.5);
-          rgba[1] = static_cast<unsigned char>(fallbackColor[1] * 255.0 + 0.5);
-          rgba[2] = static_cast<unsigned char>(fallbackColor[2] * 255.0 + 0.5);
+          rgba[0] = fallbackBytes[0];
+          rgba[1] = fallbackBytes[1];
+          rgba[2] = fallbackBytes[2];
           rgba[3] = 255;
         }
         perPointColorsArray->InsertNextTypedTuple(rgba);

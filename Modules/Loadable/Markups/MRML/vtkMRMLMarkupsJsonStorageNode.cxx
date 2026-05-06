@@ -802,13 +802,10 @@ bool vtkMRMLMarkupsJsonStorageNode::ReadControlPoints(vtkMRMLJsonElement* contro
     }
     // Per-control-point color override is read after AddControlPoint, since
     // the override lives on the markups node's control point dataset, not on
-    // the ControlPoint struct.
-    bool hasColor = false;
+    // the ControlPoint struct. GetVectorProperty already returns false when
+    // the field is absent.
     double colorRgba[4] = { 0.0, 0.0, 0.0, 1.0 };
-    if (controlPointItem->HasMember("color"))
-    {
-      hasColor = controlPointItem->GetVectorProperty("color", colorRgba, 4);
-    }
+    bool hasColor = controlPointItem->GetVectorProperty("color", colorRgba, 4);
     markupsNode->AddControlPoint(cp, false);
     if (hasColor)
     {
@@ -993,6 +990,11 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteControlPoints(vtkMRMLJsonWriter* writer
   writer->WriteArrayPropertyStart("controlPoints");
 
   int numberOfControlPoints = markupsNode->GetNumberOfControlPoints();
+  // Source override arrays are absent until any per-point color is set; skip
+  // the per-point override probe entirely on nodes that have never used the
+  // feature.
+  vtkUnsignedCharArray* srcFlagArr = markupsNode->GetControlPointColorOverriddenArray();
+  vtkUnsignedCharArray* srcColorArr = markupsNode->GetControlPointColorArray();
   for (int controlPointIndex = 0; controlPointIndex < numberOfControlPoints; controlPointIndex++)
   {
     vtkMRMLMarkupsNode::ControlPoint* cp = markupsNode->GetNthControlPoint(controlPointIndex);
@@ -1038,10 +1040,14 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteControlPoints(vtkMRMLJsonWriter* writer
 
     // Optional per-point color override (only emitted when set; old readers
     // ignore the unknown field, so this stays forward-compatible).
-    if (markupsNode->IsNthControlPointColorOverridden(controlPointIndex))
+    if (srcFlagArr && srcColorArr                                  //
+        && controlPointIndex < srcFlagArr->GetNumberOfTuples()     //
+        && controlPointIndex < srcColorArr->GetNumberOfTuples()    //
+        && srcFlagArr->GetValue(controlPointIndex) != 0)
     {
-      double rgba[4] = { 0.0, 0.0, 0.0, 0.0 };
-      markupsNode->GetNthControlPointColor(controlPointIndex, rgba);
+      unsigned char rgbaBytes[4];
+      srcColorArr->GetTypedTuple(controlPointIndex, rgbaBytes);
+      double rgba[4] = { rgbaBytes[0] / 255.0, rgbaBytes[1] / 255.0, rgbaBytes[2] / 255.0, rgbaBytes[3] / 255.0 };
       writer->WriteVectorProperty("color", rgba, 4);
     }
 

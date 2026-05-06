@@ -2056,6 +2056,18 @@ void vtkMRMLMarkupsNode::SetNthControlPointColor(int n, double r, double g, doub
 }
 
 //---------------------------------------------------------------------------
+vtkUnsignedCharArray* vtkMRMLMarkupsNode::GetControlPointColorArray()
+{
+  return vtkUnsignedCharArray::SafeDownCast(this->ControlPointDataSet->GetPointData()->GetArray(CP_COLOR_ARRAY));
+}
+
+//---------------------------------------------------------------------------
+vtkUnsignedCharArray* vtkMRMLMarkupsNode::GetControlPointColorOverriddenArray()
+{
+  return vtkUnsignedCharArray::SafeDownCast(this->ControlPointDataSet->GetPointData()->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+}
+
+//---------------------------------------------------------------------------
 bool vtkMRMLMarkupsNode::GetNthControlPointColor(int n, double rgba[4])
 {
   rgba[0] = 0.0;
@@ -2066,9 +2078,8 @@ bool vtkMRMLMarkupsNode::GetNthControlPointColor(int n, double rgba[4])
   {
     return false;
   }
-  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
-  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
-  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  vtkUnsignedCharArray* flagArr = this->GetControlPointColorOverriddenArray();
+  vtkUnsignedCharArray* colorArr = this->GetControlPointColorArray();
   if (!flagArr || !colorArr || flagArr->GetNumberOfTuples() <= n || colorArr->GetNumberOfTuples() <= n)
   {
     return false;
@@ -2093,8 +2104,7 @@ bool vtkMRMLMarkupsNode::IsNthControlPointColorOverridden(int n)
   {
     return false;
   }
-  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
-  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
+  vtkUnsignedCharArray* flagArr = this->GetControlPointColorOverriddenArray();
   if (!flagArr || flagArr->GetNumberOfTuples() <= n)
   {
     return false;
@@ -2109,9 +2119,8 @@ void vtkMRMLMarkupsNode::ClearNthControlPointColor(int n)
   {
     return;
   }
-  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
-  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
-  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  vtkUnsignedCharArray* flagArr = this->GetControlPointColorOverriddenArray();
+  vtkUnsignedCharArray* colorArr = this->GetControlPointColorArray();
   if (!flagArr || flagArr->GetNumberOfTuples() <= n || flagArr->GetValue(n) == 0)
   {
     return;
@@ -2132,9 +2141,8 @@ void vtkMRMLMarkupsNode::ClearNthControlPointColor(int n)
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::ClearAllControlPointColors()
 {
-  vtkPointData* pd = this->ControlPointDataSet->GetPointData();
-  vtkUnsignedCharArray* flagArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_OVERRIDDEN_ARRAY));
-  vtkUnsignedCharArray* colorArr = vtkUnsignedCharArray::SafeDownCast(pd->GetArray(CP_COLOR_ARRAY));
+  vtkUnsignedCharArray* flagArr = this->GetControlPointColorOverriddenArray();
+  vtkUnsignedCharArray* colorArr = this->GetControlPointColorArray();
   if (!flagArr || flagArr->GetNumberOfTuples() == 0)
   {
     return;

@@ -619,6 +619,14 @@ public:
   /// Clear all per-point color overrides on this node so all control points
   /// fall back to the display node's Color/SelectedColor/ActiveColor.
   void ClearAllControlPointColors();
+
+  /// Direct access to the per-control-point Color (4-component RGBA bytes)
+  /// and ColorOverridden (1-component bool flag) arrays. Returns nullptr
+  /// when the array does not yet exist on the dataset (i.e. no override has
+  /// ever been set on this node). Per-frame readers can hoist these out of
+  /// inner loops to skip repeated SafeDownCast lookups.
+  vtkUnsignedCharArray* GetControlPointColorArray();
+  vtkUnsignedCharArray* GetControlPointColorOverriddenArray();
   ///@}
 
   /// Get the control point dataset: a vtkPolyData mirroring control points
