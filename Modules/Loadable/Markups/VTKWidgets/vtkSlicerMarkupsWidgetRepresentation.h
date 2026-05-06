@@ -156,8 +156,7 @@ public:
   /// Name of the per-point RGBA scalar array attached to a rendering
   /// pipeline's polydata when per-control-point colors are active. Reps
   /// populate this array on the relevant `ControlPointsPolyData` (one tuple
-  /// per visible control point), and curve reps also write it on the curve
-  /// world polydata at curve-point resolution for line gradients.
+  /// per visible control point).
   static constexpr const char* PerPointColorArrayName = "ControlPointColors";
 
 protected:

@@ -468,7 +468,6 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
 
   this->ControlPoints.clear();
 
-  // Drop control point dataset points and zero-shrink any per-point arrays.
   this->ControlPointDataSet->GetPoints()->Reset();
   this->ControlPointDataSet->GetPoints()->Squeeze();
   this->SyncControlPointDataSetArrays();
@@ -641,8 +640,9 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint* controlPoint, bool autoLab
 
   this->ControlPoints.push_back(controlPoint);
 
-  // Append a default-valued tuple in every non-empty per-point PointData
-  // array. Dataset points are rebuilt lazily by GetControlPointDataSet().
+  // Dataset points are rebuilt lazily by GetControlPointDataSet(); only the
+  // per-point PointData arrays need eager sync because they hold user state
+  // that cannot be regenerated from ControlPoints.
   {
     vtkPointData* pd = this->ControlPointDataSet->GetPointData();
     std::vector<double> zeros;

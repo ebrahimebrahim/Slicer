@@ -490,10 +490,9 @@ public:
   /// that color, overriding the display node's `Color` (unselected) and
   /// `SelectedColor` (selected). `ActiveColor` still applies to the active
   /// control point so interaction feedback is preserved. Folder display
-  /// overrides take precedence over per-point colors. For curve markups, the
-  /// line interpolates between adjacent control point colors via the existing
-  /// curve scalar pipeline (only when no other curve-side scalar is active).
-  /// Default false.
+  /// overrides take precedence over per-point colors. Per-point colors apply
+  /// to the control point glyphs only; lines and curves continue to use the
+  /// display-node Color/SelectedColor. Default false.
   vtkSetMacro(UseControlPointColors, bool);
   vtkGetMacro(UseControlPointColors, bool);
   vtkBooleanMacro(UseControlPointColors, bool);

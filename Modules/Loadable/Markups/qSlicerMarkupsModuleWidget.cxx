@@ -456,7 +456,6 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
   visibleHeader->setIcon(QIcon(":/Icons/Small/SlicerVisibleInvisible.png"));
   visibleHeader->setToolTip((qSlicerMarkupsModuleWidget::tr("Click in this column to show/hide control points in 2D and 3D")));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::VisibleColumn, 30);
-  // color is a small swatch (visible only when display node UseControlPointColors is enabled)
   QTableWidgetItem* colorHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::ColorColumn);
   colorHeader->setText(qSlicerMarkupsModuleWidget::tr("Color"));
   colorHeader->setToolTip(qSlicerMarkupsModuleWidget::tr("Click in this column to set the per-control-point color. Right-click for batch operations. "
@@ -1151,7 +1150,6 @@ void qSlicerMarkupsModuleWidget::updateRow(int controlPointIndex)
     d->activeMarkupTableWidget->setItem(controlPointIndex, column, item);
   }
 
-  // per-point color swatch
   column = qSlicerMarkupsModuleWidgetPrivate::ColorColumn;
   item = d->activeMarkupTableWidget->item(controlPointIndex, column);
   isNewItem = false;

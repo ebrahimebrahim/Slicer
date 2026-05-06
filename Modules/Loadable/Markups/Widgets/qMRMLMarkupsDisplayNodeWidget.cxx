@@ -328,15 +328,10 @@ void qMRMLMarkupsDisplayNodeWidget::updateWidgetFromMRML()
   d->curveLineDiameterSliderWidget->setMRMLScene(markupsDisplayNode->GetScene());
 
   d->PropertiesLabelVisibilityCheckBox->setChecked(markupsDisplayNode->GetPropertiesLabelVisibility());
-  bool useCpColors = markupsDisplayNode->GetUseControlPointColors();
-  if (d->useControlPointColorsCheckBox->isChecked() != useCpColors)
-  {
-    bool wasBlocked = d->useControlPointColorsCheckBox->blockSignals(true);
-    d->useControlPointColorsCheckBox->setChecked(useCpColors);
-    d->useControlPointColorsCheckBox->blockSignals(wasBlocked);
-  }
 
   d->PointLabelsVisibilityCheckBox->setChecked(markupsDisplayNode->GetPointLabelsVisibility());
+
+  d->useControlPointColorsCheckBox->setChecked(markupsDisplayNode->GetUseControlPointColors());
 
   // text scale
   double textScale = markupsDisplayNode->GetTextScale();
