@@ -22,7 +22,6 @@
 #include "vtkCleanPolyData.h"
 #include "vtkGlyph3DMapper.h"
 #include "vtkLookupTable.h"
-#include "vtkMath.h"
 #include "vtkPolyDataMapper.h"
 #include "vtkPointData.h"
 #include "vtkProperty.h"
@@ -31,18 +30,12 @@
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
 #include "vtkTubeFilter.h"
-#include "vtkUnsignedCharArray.h"
 
 // MRML includes
 #include "vtkMRMLColorNode.h"
 #include "vtkMRMLInteractionEventData.h"
 #include "vtkMRMLMarkupsCurveNode.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
-
-// STL
-#include <algorithm>
-#include <array>
-#include <vector>
 
 vtkStandardNewMacro(vtkSlicerCurveRepresentation3D);
 
@@ -260,112 +253,8 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
     }
   }
 
-  // Per-control-point line gradient: when UseControlPointColors is on and
-  // no curve-side scalar is active, write per-point colors onto the curve
-  // world polydata as a PerPointColorArrayName RGBA array, interpolated
-  // along each segment.
-  const bool useCpColorsForLine = this->MarkupsDisplayNode->GetUseControlPointColors() //
-                                  && !this->IsFolderDisplayOverrideActive()            //
-                                  && !this->MarkupsDisplayNode->GetScalarVisibility();
-
-  if (useCpColorsForLine && curveWorld && curveWorld->GetNumberOfPoints() > 0)
-  {
-    int nCp = markupsNode->GetNumberOfControlPoints();
-    bool anyOverride = false;
-    for (int i = 0; i < nCp && !anyOverride; ++i)
-    {
-      if (markupsNode->IsNthControlPointColorOverridden(i))
-      {
-        anyOverride = true;
-      }
-    }
-    if (anyOverride)
-    {
-      // Cache per-CP RGBA + world position once; the curve-point loop below
-      // would otherwise repeat string-keyed array lookups for ~1000 points
-      // per curve.
-      double fallbackRgba[4] = { 1.0, 1.0, 1.0, 1.0 };
-      double* widgetColor = this->GetWidgetColor(Unselected);
-      fallbackRgba[0] = widgetColor[0];
-      fallbackRgba[1] = widgetColor[1];
-      fallbackRgba[2] = widgetColor[2];
-      std::vector<std::array<double, 4>> cpRgba(nCp);
-      std::vector<std::array<double, 3>> cpPosWorld(nCp);
-      for (int c = 0; c < nCp; ++c)
-      {
-        if (!markupsNode->GetNthControlPointColor(c, cpRgba[c].data()))
-        {
-          std::copy_n(fallbackRgba, 4, cpRgba[c].data());
-        }
-        markupsNode->GetNthControlPointPositionWorld(c, cpPosWorld[c].data());
-      }
-      vtkIdType nCurve = curveWorld->GetNumberOfPoints();
-      vtkSmartPointer<vtkUnsignedCharArray> arr = vtkUnsignedCharArray::SafeDownCast(curveWorld->GetPointData()->GetArray(PerPointColorArrayName));
-      if (!arr || arr->GetNumberOfComponents() != 4)
-      {
-        arr = vtkSmartPointer<vtkUnsignedCharArray>::New();
-        arr->SetName(PerPointColorArrayName);
-        arr->SetNumberOfComponents(4);
-        curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
-        curveWorld->GetPointData()->AddArray(arr);
-      }
-      arr->SetNumberOfTuples(nCurve);
-      for (vtkIdType i = 0; i < nCurve; ++i)
-      {
-        int prevCp = markupsNode->GetControlPointIndexFromInterpolatedPointIndex(i);
-        if (prevCp < 0)
-        {
-          prevCp = 0;
-        }
-        if (prevCp >= nCp)
-        {
-          prevCp = nCp - 1;
-        }
-        int nextCp = std::min(prevCp + 1, nCp - 1);
-        const double* prevRgba = cpRgba[prevCp].data();
-        const double* nextRgba = cpRgba[nextCp].data();
-        double t = 0.0;
-        if (prevCp != nextCp)
-        {
-          double curvePos[3];
-          curveWorld->GetPoint(i, curvePos);
-          const double* prevPos = cpPosWorld[prevCp].data();
-          const double* nextPos = cpPosWorld[nextCp].data();
-          double d1 = sqrt(vtkMath::Distance2BetweenPoints(prevPos, curvePos));
-          double d2 = sqrt(vtkMath::Distance2BetweenPoints(curvePos, nextPos));
-          double d = d1 + d2;
-          t = (d > 1e-9) ? d1 / d : 0.0;
-        }
-        unsigned char rgba[4] = { static_cast<unsigned char>((prevRgba[0] * (1.0 - t) + nextRgba[0] * t) * 255.0 + 0.5),
-                                  static_cast<unsigned char>((prevRgba[1] * (1.0 - t) + nextRgba[1] * t) * 255.0 + 0.5),
-                                  static_cast<unsigned char>((prevRgba[2] * (1.0 - t) + nextRgba[2] * t) * 255.0 + 0.5),
-                                  static_cast<unsigned char>((prevRgba[3] * (1.0 - t) + nextRgba[3] * t) * 255.0 + 0.5) };
-        arr->SetTypedTuple(i, rgba);
-      }
-      arr->Modified();
-      curveWorld->GetPointData()->SetActiveScalars(PerPointColorArrayName);
-      this->LineMapper->SetScalarVisibility(true);
-      this->LineMapper->SetScalarModeToUsePointData();
-      this->LineMapper->SetColorModeToDirectScalars();
-      this->LineMapper->UseLookupTableScalarRangeOn();
-      this->LineMapper->SetLookupTable(nullptr);
-    }
-    else
-    {
-      curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
-      this->LineMapper->SetScalarVisibility(false);
-    }
-  }
-  else
-  {
-    curveWorld->GetPointData()->RemoveArray(PerPointColorArrayName);
-  }
-
   // Scalars
-  if (!useCpColorsForLine)
-  {
-    this->LineMapper->SetScalarVisibility(this->MarkupsDisplayNode->GetScalarVisibility());
-  }
+  this->LineMapper->SetScalarVisibility(this->MarkupsDisplayNode->GetScalarVisibility());
   // if the scalars are visible, set active scalars, the lookup table and the scalar range
   if (this->MarkupsDisplayNode->GetScalarVisibility())
   {

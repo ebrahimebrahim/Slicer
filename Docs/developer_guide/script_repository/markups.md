@@ -508,10 +508,11 @@ pointListDisplayNode.SetViewNodeIDs(["vtkMRMLSliceNodeRed", "vtkMRMLViewNode1"])
 
 ### Set per-control-point colors
 
-Each control point can be assigned its own color. Per-point colors override the
-display node's Selected/Unselected colors for that point; the Active color
-still highlights the active control point. For curve markups, the line
-gradients between adjacent control point colors.
+Each control point can be assigned its own color. Per-point colors apply to
+the control point glyphs and override the display node's Selected/Unselected
+colors for points where a color has been set; the Active color still
+highlights the active control point. The line or curve connecting the
+control points keeps the display node's line color.
 
 ```python
 m = slicer.modules.markups.logic().AddNewMarkupsNode("vtkMRMLMarkupsFiducialNode")
