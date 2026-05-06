@@ -235,23 +235,9 @@ void vtkMRMLMarkupsNode::CopyContent(vtkMRMLNode* aSource, bool deepCopy /*=true
   }
   this->FixedNumberOfControlPoints = wasFixedNumberOfControlPoints;
 
-  // Copy per-control-point PointData arrays (Color, ColorOverridden, ...).
-  // The dataset's points were set up by AddControlPoint above; deep-copy
-  // named arrays from source so per-point overrides round-trip.
-  vtkPointData* sourcePd = source->ControlPointDataSet->GetPointData();
-  vtkPointData* destPd = this->ControlPointDataSet->GetPointData();
-  for (int a = 0; a < sourcePd->GetNumberOfArrays(); ++a)
-  {
-    vtkDataArray* srcArr = sourcePd->GetArray(a);
-    if (!srcArr || srcArr->GetNumberOfTuples() == 0)
-    {
-      continue;
-    }
-    vtkSmartPointer<vtkDataArray> destArr = vtkSmartPointer<vtkDataArray>::Take(srcArr->NewInstance());
-    destArr->DeepCopy(srcArr);
-    destPd->RemoveArray(srcArr->GetName());
-    destPd->AddArray(destArr);
-  }
+  // Deep-copy per-control-point PointData arrays (Color, ColorOverridden, ...)
+  // so per-point overrides round-trip. Dataset points are rebuilt lazily.
+  this->ControlPointDataSet->GetPointData()->DeepCopy(source->ControlPointDataSet->GetPointData());
   this->ControlPointDataSet->Modified();
 
   // Copy measurements
@@ -655,9 +641,8 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint* controlPoint, bool autoLab
 
   this->ControlPoints.push_back(controlPoint);
 
-  // Append a slot to the control point dataset (point + a default-valued
-  // tuple in every non-empty per-point PointData array).
-  this->ControlPointDataSet->GetPoints()->InsertNextPoint(controlPoint->Position);
+  // Append a default-valued tuple in every non-empty per-point PointData
+  // array. Dataset points are rebuilt lazily by GetControlPointDataSet().
   {
     vtkPointData* pd = this->ControlPointDataSet->GetPointData();
     std::vector<double> zeros;
@@ -889,31 +874,6 @@ void vtkMRMLMarkupsNode::RemoveNthControlPoint(int pointIndex)
   delete this->ControlPoints[static_cast<unsigned int>(pointIndex)];
   this->ControlPoints.erase(this->ControlPoints.begin() + pointIndex);
 
-  // Remove the corresponding slot from the control point dataset. Snapshot
-  // existing values first to avoid relying on SetNumberOfPoints preserving
-  // the underlying buffer.
-  {
-    vtkPoints* points = this->ControlPointDataSet->GetPoints();
-    int oldSize = static_cast<int>(points->GetNumberOfPoints());
-    if (pointIndex < oldSize)
-    {
-      std::vector<double> snapshot(oldSize * 3, 0.0);
-      for (int i = 0; i < oldSize; ++i)
-      {
-        points->GetPoint(i, snapshot.data() + i * 3);
-      }
-      points->SetNumberOfPoints(oldSize - 1);
-      for (int i = 0; i < pointIndex; ++i)
-      {
-        points->SetPoint(i, snapshot.data() + i * 3);
-      }
-      for (int i = pointIndex + 1; i < oldSize; ++i)
-      {
-        points->SetPoint(i - 1, snapshot.data() + i * 3);
-      }
-      points->Modified();
-    }
-  }
   this->RemoveControlPointDataSetTupleAt(pointIndex);
   this->ControlPointDataSet->Modified();
 
@@ -961,30 +921,6 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint* controlPoint, int targ
   std::vector<ControlPoint*>::iterator pos = this->ControlPoints.begin() + destIndex;
   this->ControlPoints.insert(pos, controlPoint);
 
-  // Insert a slot at destIndex into the control point dataset (point + a
-  // default-valued tuple in every non-empty per-point PointData array).
-  // Snapshot existing point coordinates first to avoid relying on the
-  // underlying vtkPoints buffer being preserved across SetNumberOfPoints.
-  {
-    vtkPoints* points = this->ControlPointDataSet->GetPoints();
-    int oldSize = static_cast<int>(points->GetNumberOfPoints());
-    std::vector<double> snapshot(oldSize * 3, 0.0);
-    for (int i = 0; i < oldSize; ++i)
-    {
-      points->GetPoint(i, snapshot.data() + i * 3);
-    }
-    points->SetNumberOfPoints(oldSize + 1);
-    for (int i = 0; i < destIndex; ++i)
-    {
-      points->SetPoint(i, snapshot.data() + i * 3);
-    }
-    points->SetPoint(destIndex, controlPoint->Position);
-    for (int i = destIndex; i < oldSize; ++i)
-    {
-      points->SetPoint(i + 1, snapshot.data() + i * 3);
-    }
-    points->Modified();
-  }
   this->InsertControlPointDataSetTupleAt(destIndex);
   this->ControlPointDataSet->Modified();
 
@@ -1084,19 +1020,6 @@ void vtkMRMLMarkupsNode::SwapControlPoints(int m1, int m2)
   // and copy the backup of the first one into the second
   *controlPoint2 = controlPoint1Backup;
 
-  // Swap the corresponding control point dataset entries.
-  {
-    vtkPoints* points = this->ControlPointDataSet->GetPoints();
-    if (m1 < points->GetNumberOfPoints() && m2 < points->GetNumberOfPoints())
-    {
-      double p1[3], p2[3];
-      points->GetPoint(m1, p1);
-      points->GetPoint(m2, p2);
-      points->SetPoint(m1, p2);
-      points->SetPoint(m2, p1);
-      points->Modified();
-    }
-  }
   this->SwapControlPointDataSetTuples(m1, m2);
   this->ControlPointDataSet->Modified();
 
@@ -1962,6 +1885,9 @@ vtkPolyData* vtkMRMLMarkupsNode::GetControlPointDataSet()
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::UpdateControlPointDataSetPoints()
 {
+  // SetNumberOfPoints/SetPoint advance the underlying data array's MTime
+  // only on real changes, so back-to-back reads on an unchanged node do
+  // not fire spurious Modified events through points->GetMTime().
   vtkPoints* points = this->ControlPointDataSet->GetPoints();
   int n = this->GetNumberOfControlPoints();
   points->SetNumberOfPoints(n);
@@ -1969,7 +1895,6 @@ void vtkMRMLMarkupsNode::UpdateControlPointDataSetPoints()
   {
     points->SetPoint(i, this->ControlPoints[static_cast<size_t>(i)]->Position);
   }
-  points->Modified();
 }
 
 //---------------------------------------------------------------------------
@@ -2054,23 +1979,11 @@ void vtkMRMLMarkupsNode::RemoveControlPointDataSetTupleAt(int removeIndex)
     {
       continue;
     }
-    int oldSize = static_cast<int>(arr->GetNumberOfTuples());
-    if (removeIndex < 0 || removeIndex >= oldSize)
+    if (removeIndex < 0 || removeIndex >= static_cast<int>(arr->GetNumberOfTuples()))
     {
       continue;
     }
-    int nc = arr->GetNumberOfComponents();
-    std::vector<double> snapshot;
-    SnapshotArrayValues(arr, snapshot);
-    arr->SetNumberOfTuples(oldSize - 1);
-    for (int i = 0; i < removeIndex; ++i)
-    {
-      arr->SetTuple(i, snapshot.data() + i * nc);
-    }
-    for (int i = removeIndex + 1; i < oldSize; ++i)
-    {
-      arr->SetTuple(i - 1, snapshot.data() + i * nc);
-    }
+    arr->RemoveTuple(removeIndex);
     arr->Modified();
   }
 }
