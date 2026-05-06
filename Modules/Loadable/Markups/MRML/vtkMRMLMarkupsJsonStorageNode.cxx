@@ -990,9 +990,7 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteControlPoints(vtkMRMLJsonWriter* writer
   writer->WriteArrayPropertyStart("controlPoints");
 
   int numberOfControlPoints = markupsNode->GetNumberOfControlPoints();
-  // Source override arrays are absent until any per-point color is set; skip
-  // the per-point override probe entirely on nodes that have never used the
-  // feature.
+  // Arrays are nullptr on nodes that never set a per-point color.
   vtkUnsignedCharArray* srcFlagArr = markupsNode->GetControlPointColorOverriddenArray();
   vtkUnsignedCharArray* srcColorArr = markupsNode->GetControlPointColorArray();
   for (int controlPointIndex = 0; controlPointIndex < numberOfControlPoints; controlPointIndex++)

@@ -290,8 +290,6 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
   int numPoints = markupsNode->GetNumberOfControlPoints();
   std::vector<int> activeControlPointIndices;
   this->MarkupsDisplayNode->GetActiveControlPoints(activeControlPointIndices);
-  // Folder override and the source per-point color arrays are invariant
-  // across the per-pipeline loop; hoist them once.
   const bool perPointColorsEnabled = this->MarkupsDisplayNode->GetUseControlPointColors() //
                                      && !this->IsFolderDisplayOverrideActive();
   vtkUnsignedCharArray* srcColorArr = perPointColorsEnabled ? markupsNode->GetControlPointColorArray() : nullptr;
