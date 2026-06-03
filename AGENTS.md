@@ -120,6 +120,13 @@ uvx --from sphinx --with-requirements requirements-docs.txt sphinx-build -b html
 
 Set `EXCLUDE_API_REFERENCE=True` to skip CLI API reference generation for faster iteration.
 
+### Script repository
+
+The Slicer script repository is available locally in `Docs/developer_guide/script_repository/`. Super helpful for Slicer idioms, and for python snippets for many common tasks.
+
+- `Docs/developer_guide/script_repository.md` — top-level script repository index
+- `Docs/developer_guide/script_repository/` — contains lots of specific docs that can provide very helpful recipes and python snippets for common slicer tasks
+
 ## Developer Setup
 
 Run `Utilities/SetupForDevelopment.sh` after cloning to configure git hooks and settings.
