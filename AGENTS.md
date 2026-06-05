@@ -51,6 +51,29 @@ Python tests are registered via `slicer_add_python_unittest()` in `CMake/SlicerM
 
 When fixing an identified bug, use TDD: write the test first (or revert the fix to confirm the test fails), then apply the fix and confirm the test passes. This ensures the test actually catches the bug rather than passing vacuously. Also do this for tests with heavy mocking or complex setup, where it's easy for a test to pass vacuously because the mocks aren't wired correctly. Not every test needs this treatment, but bug-fix tests and mock-heavy tests definitely do.
 
+### Headless Slicer smoke tests
+
+When running a temporary Slicer Python smoke test with `Slicer --no-main-window --no-splash --python-script /tmp/test.py`, explicitly exit the application from the script. Otherwise the script can print the expected success output but leave the Slicer process running indefinitely.
+
+For a simple success-only smoke test, end the script with:
+
+```python
+slicer.app.exit(0)
+```
+
+For assertion-heavy scripts, use a wrapper that exits with a non-zero status on failure:
+
+```python
+import traceback
+
+try:
+  # test setup and assertions here
+  slicer.app.exit(0)
+except Exception:
+  traceback.print_exc()
+  slicer.app.exit(1)
+```
+
 ## Code Architecture
 
 ### Core layers (bottom-up)
