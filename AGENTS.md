@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to LLM-based coding agents, including Codex, when working with code in this repository.
 
 ## Project Overview
 
@@ -122,7 +122,7 @@ Prefix every commit message with one of:
 
 Subject line: imperative mood, <72 chars, capitalized, no trailing period.
 
-Additionally, use the `CLAUDE:` prefix for commits that won't be submitted upstream — Claude-specific artifacts, scratchwork notes, planning documents, `pr-*-notes/` files, CLAUDE.md updates, etc. Only commits with standard prefixes (ENH, BUG, etc.) get cherry-picked to branches destined for merging to main. Keep implementation changes and non-submission changes in separate commits to make cherry-picking clean.
+Use the `LOCAL:` prefix for commits that won't be submitted upstream — agent-specific artifacts, scratchwork notes, planning documents, `pr-*-notes/` files, `AGENTS.md` updates, etc. Only commits with standard prefixes (ENH, BUG, etc.) get cherry-picked to branches destined for merging to main. Keep implementation changes and non-submission changes in separate commits to make cherry-picking clean.
 
 ## Code Formatting
 
