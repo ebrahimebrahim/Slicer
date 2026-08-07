@@ -25,6 +25,7 @@
 // VTK includes
 #include <vtkCommand.h>
 #include <vtkDiscretizableColorTransferFunction.h>
+#include <vtkDoubleArray.h>
 #include <vtkIntArray.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
@@ -34,6 +35,8 @@
 #include <vtksys/SystemTools.hxx>
 
 // STL includes
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 
 const char* vtkMRMLMarkupsDisplayNode::LineColorNodeReferenceRole = "lineColor";
@@ -52,6 +55,7 @@ vtkMRMLMarkupsDisplayNode::vtkMRMLMarkupsDisplayNode()
   this->Visibility2D = 1;
   this->VectorVisibility = 0;
   this->ScalarVisibility = 0;
+  this->ControlPointScalarVisibility = false;
   this->TensorVisibility = 0;
 
   this->Color[0] = 0.4;
@@ -171,6 +175,7 @@ void vtkMRMLMarkupsDisplayNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLBeginMacro(of);
   vtkMRMLWriteXMLBooleanMacro(propertiesLabelVisibility, PropertiesLabelVisibility);
   vtkMRMLWriteXMLBooleanMacro(pointLabelsVisibility, PointLabelsVisibility);
+  vtkMRMLWriteXMLBooleanMacro(controlPointScalarVisibility, ControlPointScalarVisibility);
   vtkMRMLWriteXMLFloatMacro(textScale, TextScale);
   vtkMRMLWriteXMLFloatMacro(glyphScale, GlyphScale);
   vtkMRMLWriteXMLFloatMacro(glyphSize, GlyphSize);
@@ -228,6 +233,7 @@ void vtkMRMLMarkupsDisplayNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLBeginMacro(atts);
   vtkMRMLReadXMLBooleanMacro(propertiesLabelVisibility, PropertiesLabelVisibility);
   vtkMRMLReadXMLBooleanMacro(pointLabelsVisibility, PointLabelsVisibility);
+  vtkMRMLReadXMLBooleanMacro(controlPointScalarVisibility, ControlPointScalarVisibility);
   vtkMRMLReadXMLFloatMacro(textScale, TextScale);
   vtkMRMLReadXMLFloatMacro(glyphScale, GlyphScale);
   vtkMRMLReadXMLFloatMacro(glyphSize, GlyphSize);
@@ -317,6 +323,7 @@ void vtkMRMLMarkupsDisplayNode::CopyContent(vtkMRMLNode* anode, bool deepCopy /*
   vtkMRMLCopyBeginMacro(anode);
   vtkMRMLCopyBooleanMacro(PropertiesLabelVisibility);
   vtkMRMLCopyBooleanMacro(PointLabelsVisibility);
+  vtkMRMLCopyBooleanMacro(ControlPointScalarVisibility);
   vtkMRMLCopyFloatMacro(TextScale);
   vtkMRMLCopyFloatMacro(GlyphScale);
   vtkMRMLCopyFloatMacro(GlyphSize);
@@ -506,6 +513,7 @@ void vtkMRMLMarkupsDisplayNode::PrintSelf(ostream& os, vtkIndent indent)
   vtkMRMLPrintBeginMacro(os, indent);
   vtkMRMLPrintBooleanMacro(PropertiesLabelVisibility);
   vtkMRMLPrintBooleanMacro(PointLabelsVisibility);
+  vtkMRMLPrintBooleanMacro(ControlPointScalarVisibility);
   vtkMRMLPrintFloatMacro(TextScale);
   vtkMRMLPrintFloatMacro(GlyphScale);
   vtkMRMLPrintFloatMacro(GlyphSize);
@@ -918,6 +926,93 @@ vtkDataArray* vtkMRMLMarkupsDisplayNode::GetActiveScalarArray()
   }
 
   return this->GetMarkupsNode()->GetCurveWorld()->GetPointData()->GetArray(this->GetActiveScalarName());
+}
+
+//-----------------------------------------------------------
+vtkMRMLMeasurement* vtkMRMLMarkupsDisplayNode::GetActiveControlPointMeasurement()
+{
+  const char* activeScalarName = this->GetActiveScalarName();
+  if (activeScalarName == nullptr || activeScalarName[0] == '\0')
+  {
+    return nullptr;
+  }
+
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (!markupsNode)
+  {
+    return nullptr;
+  }
+
+  return markupsNode->GetMeasurement(activeScalarName);
+}
+
+//-----------------------------------------------------------
+vtkDoubleArray* vtkMRMLMarkupsDisplayNode::GetActiveControlPointScalarArray()
+{
+  vtkMRMLMeasurement* measurement = this->GetActiveControlPointMeasurement();
+  return measurement ? measurement->GetControlPointValues() : nullptr;
+}
+
+//-----------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::SetControlPointScalarVisibility(bool visibility)
+{
+  if (visibility == this->ControlPointScalarVisibility)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(this);
+  this->ControlPointScalarVisibility = visibility;
+  this->Modified();
+  this->UpdateScalarRange();
+}
+
+//-----------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::UpdateScalarRange()
+{
+  if (!this->GetControlPointScalarVisibility() || this->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseDataScalarRange)
+  {
+    this->Superclass::UpdateScalarRange();
+    return;
+  }
+
+  vtkDoubleArray* controlPointScalars = this->GetActiveControlPointScalarArray();
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  const int numberOfComponents = controlPointScalars ? controlPointScalars->GetNumberOfComponents() : 0;
+  if (!controlPointScalars || !markupsNode || controlPointScalars->GetNumberOfTuples() != markupsNode->GetNumberOfControlPoints()
+      || (numberOfComponents != 1 && numberOfComponents != 3 && numberOfComponents != 4))
+  {
+    this->Superclass::UpdateScalarRange();
+    return;
+  }
+
+  bool foundFiniteValue = false;
+  double finiteRange[2] = { 0.0, 0.0 };
+  for (vtkIdType tupleIndex = 0; tupleIndex < controlPointScalars->GetNumberOfTuples(); ++tupleIndex)
+  {
+    double value = controlPointScalars->GetComponent(tupleIndex, 0);
+    if (!std::isfinite(value))
+    {
+      continue;
+    }
+    if (!foundFiniteValue)
+    {
+      finiteRange[0] = value;
+      finiteRange[1] = value;
+      foundFiniteValue = true;
+    }
+    else
+    {
+      finiteRange[0] = std::min(finiteRange[0], value);
+      finiteRange[1] = std::max(finiteRange[1], value);
+    }
+  }
+
+  // Preserve the last valid range when all values are unset or non-finite.
+  if (foundFiniteValue)
+  {
+    this->SetScalarRange(finiteRange);
+  }
 }
 
 //---------------------------------------------------------------------------

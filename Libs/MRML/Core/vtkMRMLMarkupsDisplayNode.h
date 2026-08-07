@@ -532,8 +532,29 @@ public:
   /// Get data set containing the scalar arrays for this node type.
   /// For markups it is the curve poly data
   virtual vtkDataSet* GetScalarDataSet() override;
-  /// Return the current active scalar array (based on active scalar name and location)
+  /// Return the current active scalar array in the curve poly data, based on
+  /// active scalar name and location. Per-control-point measurement values are
+  /// available through GetActiveControlPointScalarArray().
   virtual vtkDataArray* GetActiveScalarArray() override;
+
+  /// Get the measurement selected by ActiveScalarName.
+  /// Returns nullptr if there is no markups node, no active scalar name, or no
+  /// measurement with that name.
+  vtkMRMLMeasurement* GetActiveControlPointMeasurement();
+
+  /// Get the per-control-point values of the measurement selected by ActiveScalarName.
+  /// The returned array is owned by the measurement.
+  vtkDoubleArray* GetActiveControlPointScalarArray();
+
+  /// Control whether control point glyph colors are determined by the active scalar.
+  /// This is independent of ScalarVisibility, which controls curve line coloring.
+  void SetControlPointScalarVisibility(bool visibility);
+  vtkGetMacro(ControlPointScalarVisibility, bool);
+  vtkBooleanMacro(ControlPointScalarVisibility, bool);
+
+  /// Update the scalar range. When control point scalar coloring is enabled,
+  /// finite values in the raw per-control-point array determine the data range.
+  void UpdateScalarRange() override;
 
   /// Update scalar range and update markups pipeline when the active scalar array is changed
   virtual void UpdateAssignedAttribute() override;
@@ -622,5 +643,7 @@ protected:
   bool TranslationHandleComponentVisibility[4];
 
   bool CanDisplayScaleHandles;
+
+  bool ControlPointScalarVisibility;
 };
 #endif
