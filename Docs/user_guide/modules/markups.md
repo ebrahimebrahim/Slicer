@@ -106,17 +106,20 @@ The following keyboard shortcuts are active when the markups toolbar is displaye
     - Use Markup Color: If checked, color the projections the same color as the markup.
     - Projection Color: If not using markup color for the projection, use this color.
     - Outlined Behind Slice Plane: Control point projection is displayed filled (opacity = Projection Opacity) when on top of slice plane, outlined when behind, and with full opacity when in the plane. Outline isn't used for some glyphs (Dash2D, Cross2D, Starburst).
-- Scalars: Color markup according to a scalar, e.g. a per-control-point measurement (see Measurements section below)
-  - Visibility: Controls the visibility of the scalars on the markups node.
-  - Active Scalar: Select the scalar value that should be displayed.
+- Scalars: Color a 3D line or curve, individual control point glyphs, or both from a selected scalar source (see Measurements section below).
+  - Visibility:
+    - Line/curve (3D): Apply scalar coloring to the line or curve in 3D views.
+    - Control points: Apply scalar coloring to control point glyphs. This setting is independent of 3D line/curve scalar visibility.
+  - Scalar source: Select a per-control-point measurement or a curve data array. Curve arrays color lines in 3D views. A source is only applied where it provides compatible values.
   - Color Table: Select the color table that should be used to display the scalars.
-  - Scalar Range Mode: Select the mode that should be used to control the mapping the scalar range onto the color node.
+  - Scalar Range Mode: Select the mode that should be used to control the mapping of the scalar range onto the color node.
     - Manual: range is set manually
     - Data scalar range: range is set to the value range of the active scalar
     - Color table: use range specified in the color table. Useful for showing several nodes using the same color mapping.
     - Data type: range is set to the possible range of the active scalar's data type. This is only useful mostly for 8-bit scalars.
-    - Direct color mapping: if active scalar has 3 or 4 components then those are interpreted as RGB or RGBA values.
+    - Direct color mapping: if the active measurement has 3 or 4 components, they are interpreted as normalized RGB or RGBA values in the range 0 to 1.
   - Displayed Range: The currently used scalar range.
+  - If a control point has an undefined measurement value, its glyph uses the usual markup display color instead of a measurement color.
 - Color Legend: Controls the color legend for the currently active scalars.
   - Visibility: Controls the visibility of the color legend in the views.
   - Views: Select which views the color legend should be displayed in.
@@ -136,11 +139,6 @@ The following keyboard shortcuts are active when the markups toolbar is displaye
     - Size: Change the size of the title.
 - Save to Defaults: Save the display properties of this markup to be the new system defaults. The control point label visibility and properties label visibility are settings that are not included when saving defaults, as typically it is better to initialize these based on the markup type (control point labels are more useful for markups point lists, while the properties label is more useful for other markup types).
 - Reset to Defaults: Reset the display properties of this markup to the system defaults.
-Measurements section below)
-  - Visible: Whether scalar coloring should be shown or the original color of the markup
-  - Active Scalar: Which scalar array to use for coloring
-  - Color Table: Palette used for coloring
-  - Scalar Range Mode: Method for determining the range of the scalars (automatic range calculation based on the data is the default)
 
 ### Control points section
 - Interaction:
@@ -165,6 +163,7 @@ Measurements section below)
   - Name: A short name for this control point, displayed in the viewers as text next to the glyphs.
   - Description: A longer description for this control point, not displayed in the viewers.
   - X, Y, Z: The RAS coordinates of this control point, 3 places of precision are shown.
+  - Measurement: The value of the per-control-point measurement selected in Display / Scalars. Values of editable static measurements can be entered here. Enter `undefined` to clear a value; RGB and RGBA values are entered as three or four comma-separated numbers in the range 0 to 1.
   - State: The current state of the control point. Clicking on the current state will cycle through the possible states.
     - Edit: The control point is currently being placed. Only one control point can be in the edit state at a time. If the state of another control point is set to edit, then the current control point state will be set to clear.
     - Skip: The control point is not currently defined, and cannot be selected for placement.
@@ -181,16 +180,27 @@ Measurements section below)
   - Convert annotation fiducials: Uses annotation fiducial hierarchies to convert them to markups. Removes the annotation nodes once completed.
 
 ### Measurements section
-- This section lists the available measurements of the selected markup
+
+- This section lists the available measurements of the selected markup.
   - `length` for line and curve
   - `angle` for angle markups
   - `curvature mean` and `curvature max` for curve markups
   - `area` for plane markups
   - `volume` for ROI markups
-- In the table below the measurement descriptions, the measurements can be enabled/disabled
+- In the table below the measurement descriptions, the measurements can be enabled/disabled.
   - Basic measurements (e.g. length, angle) are enabled by default
   - Curve markups support curvature calculation, which is off by default
     - When turned on, the curvature data can be displayed as scalar coloring (see Display/Scalars above)
+- To assign individual colors to control points:
+  1. Enter a measurement name, choose `Scalar`, `RGB`, or `RGBA`, and click `Add`. The new static measurement contains one initially undefined value for each control point.
+  2. Select the new measurement under Display / Scalars / Scalar source.
+  3. Edit its values in the corresponding column of the control points table.
+  4. Enable Control points under Display / Scalars / Visibility. Enable Line/curve (3D) separately if scalar coloring should also be applied to the 3D line.
+- A scalar measurement stores one numeric value per control point. Choose a color table and scalar range mode to map these values to colors.
+- An RGB or RGBA measurement stores normalized color components directly. Selecting one changes the scalar range mode to Direct color mapping.
+- An undefined value is stored as `NaN` internally and as `null` in a Markups JSON file. A control point with an undefined value retains its normal selected or unselected display color.
+- A scalar may also represent a discrete category by storing the row index of a color table. If the selected color table contains terminology entries, the category selector in the measurement column can assign a terminology-coded row to each control point. This category is separate from the control point name: assigning a category does not rename the control point or change its displayed label.
+- Per-control-point measurement values and scalar display settings are saved in a standalone `.mrk.json` file. References to stable built-in color tables are saved as well. Custom color tables are scene-specific and cannot be included reliably by reference in a standalone Markups JSON file; save the MRML scene (`.mrml`) with its associated data files, or use a self-contained scene bundle (`.mrb`), to preserve the markup and custom color table together.
 
 ### Export/Import Table section
 - This section controls the import and export of markups to `vtkMRMLTableNode`.
