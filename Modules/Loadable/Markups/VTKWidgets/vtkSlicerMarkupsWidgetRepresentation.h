@@ -54,6 +54,7 @@
 #include "vtkGlyph3D.h"
 #include "vtkLookupTable.h"
 #include "vtkMarkupsGlyphSource2D.h"
+#include "vtkIdTypeArray.h"
 #include "vtkPointPlacer.h"
 #include "vtkPointSetToLabelHierarchy.h"
 #include "vtkPolyDataMapper2D.h"
@@ -66,6 +67,7 @@
 #include "vtkTransform.h"
 #include "vtkTransformPolyDataFilter.h"
 #include "vtkTubeFilter.h"
+#include "vtkUnsignedCharArray.h"
 
 class vtkMRMLInteractionEventData;
 
@@ -170,6 +172,8 @@ protected:
 
     vtkSmartPointer<vtkPolyData> ControlPointsPolyData;
     vtkSmartPointer<vtkPoints> ControlPoints;
+    vtkSmartPointer<vtkIdTypeArray> ControlPointSourceIndices;
+    vtkSmartPointer<vtkUnsignedCharArray> ControlPointColors;
     vtkSmartPointer<vtkPolyData> LabelControlPointsPolyData;
     vtkSmartPointer<vtkPoints> LabelControlPoints;
     vtkSmartPointer<vtkPointSetToLabelHierarchy> PointSetToLabelHierarchyFilter;
@@ -182,6 +186,13 @@ protected:
   virtual void UpdateViewScaleFactor() = 0;
 
   virtual void UpdateControlPointSize() = 0;
+
+  /// Update transient per-control-point colors after concrete representations
+  /// have finished adding any synthetic points.
+  virtual void UpdateControlPointColorsFromMRML();
+
+  /// Return true when scalar colors have precedence for this control point pipeline.
+  bool IsControlPointScalarColoringEnabled(int controlPointType);
 
   double ViewScaleFactorMmPerPixel;
   double ScreenSizePixel; // diagonal size of the screen

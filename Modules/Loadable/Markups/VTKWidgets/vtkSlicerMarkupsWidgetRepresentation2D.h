@@ -111,6 +111,7 @@ protected:
 
   void UpdateViewScaleFactor() override;
   void UpdateControlPointSize() override;
+  void UpdateControlPointColorsFromMRML() override;
 
   // Return squared distance of maximum distance for picking a control point,
   // in pixels.
@@ -169,6 +170,7 @@ protected:
     vtkSmartPointer<vtkActor2D> Actor;
     vtkSmartPointer<vtkPolyDataMapper2D> Mapper;
     vtkSmartPointer<vtkGlyph2D> Glypher;
+    vtkSmartPointer<vtkUnsignedCharArray> GlyphControlPointColors;
     vtkSmartPointer<vtkActor2D> LabelsActor;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsMapper;
     // Properties used to control the appearance of selected objects and

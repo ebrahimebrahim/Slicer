@@ -22,6 +22,7 @@ set(KIT_TEST_SRCS
   vtkMRMLMarkupsFiducialStorageNodeTest3.cxx
   vtkMRMLMarkupsStorageNodeTest1.cxx
   vtkMRMLMarkupsStorageNodeTest2.cxx
+  vtkSlicerMarkupsWidgetRepresentationTest1.cxx
   vtkSlicerMarkupsLogicTest1.cxx
   vtkSlicerMarkupsLogicTest2.cxx
   vtkSlicerMarkupsLogicTest3.cxx
@@ -87,6 +88,7 @@ SIMPLE_TEST( vtkMRMLMarkupsFiducialStorageNodeTest3 ${INPUT}/slicer4.acsv )
 
 SIMPLE_TEST( vtkMRMLMarkupsStorageNodeTest1 )
 SIMPLE_TEST( vtkMRMLMarkupsStorageNodeTest2 ${TEMP} )
+SIMPLE_TEST( vtkSlicerMarkupsWidgetRepresentationTest1 )
 
 # logic tests
 SIMPLE_TEST( vtkSlicerMarkupsLogicTest1 )

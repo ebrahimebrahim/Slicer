@@ -58,6 +58,7 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPi
 {
   this->Glypher = vtkSmartPointer<vtkGlyph2D>::New();
   this->Glypher->SetInputData(this->ControlPointsPolyData);
+  this->Glypher->SetScaleModeToDataScalingOff();
   this->Glypher->SetScaleFactor(1.0);
 
   // By default the Points are rendered as spheres
@@ -78,6 +79,10 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPi
   //  Because the world coordinate in the node are the 3D ones.
   coordinate->SetCoordinateSystemToDisplay();
   this->Mapper->SetTransformCoordinate(coordinate);
+
+  this->GlyphControlPointColors = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  this->GlyphControlPointColors->SetName(this->ControlPointColors->GetName());
+  this->GlyphControlPointColors->SetNumberOfComponents(4);
 
   this->Actor = vtkSmartPointer<vtkActor2D>::New();
   this->Actor->SetMapper(this->Mapper);
@@ -314,6 +319,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
 
     controlPoints->ControlPoints->Reset();
     controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->Reset();
+    controlPoints->ControlPointSourceIndices->Reset();
 
     controlPoints->LabelControlPoints->Reset();
     controlPoints->LabelControlPointsPolyData->GetPointData()->GetNormals()->Reset();
@@ -399,6 +405,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
       this->GetNthControlPointDisplayPosition(pointIndex, slicePos);
 
       controlPoints->ControlPoints->InsertNextPoint(slicePos);
+      controlPoints->ControlPointSourceIndices->InsertNextValue(pointIndex);
       slicePos[0] += labelsOffset / sqrt(2.0);
       slicePos[1] += labelsOffset / sqrt(2.0);
       this->Renderer->SetDisplayPoint(slicePos);
@@ -420,6 +427,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
 
     controlPoints->ControlPoints->Modified();
     controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->Modified();
+    controlPoints->ControlPointSourceIndices->Modified();
     controlPoints->ControlPointsPolyData->Modified();
 
     controlPoints->LabelControlPoints->Modified();
@@ -609,6 +617,56 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode*
   this->UpdateAllPointsAndLabelsFromMRML(labelsOffset);
 
   this->VisibilityOn();
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::UpdateControlPointColorsFromMRML()
+{
+  Superclass::UpdateControlPointColorsFromMRML();
+
+  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
+  {
+    ControlPointsPipeline2D* controlPoints = this->GetControlPointsPipeline(controlPointType);
+    bool scalarVisibility = this->IsControlPointScalarColoringEnabled(controlPointType);
+
+    controlPoints->Mapper->SetScalarModeToUsePointData();
+    controlPoints->Mapper->SetColorModeToDirectScalars();
+    controlPoints->Mapper->SetScalarVisibility(false);
+    if (!scalarVisibility)
+    {
+      continue;
+    }
+
+    // vtkGlyph2D does not propagate arbitrary input point-data arrays. Expand each
+    // input control-point color over the points of its generated glyph instead.
+    controlPoints->Glypher->Update();
+    vtkPolyData* glyphOutput = controlPoints->Glypher->GetOutput();
+    vtkIdType numberOfControlPoints = controlPoints->ControlPointColors->GetNumberOfTuples();
+    vtkIdType numberOfGlyphPoints = glyphOutput->GetNumberOfPoints();
+    bool glyphColorsValid = numberOfGlyphPoints == 0 || (numberOfControlPoints > 0 && numberOfGlyphPoints % numberOfControlPoints == 0);
+
+    controlPoints->GlyphControlPointColors->SetNumberOfTuples(glyphColorsValid ? numberOfGlyphPoints : 0);
+    if (glyphColorsValid && numberOfGlyphPoints > 0)
+    {
+      vtkIdType numberOfGlyphPointsPerControlPoint = numberOfGlyphPoints / numberOfControlPoints;
+      unsigned char color[4] = { 255, 255, 255, 255 };
+      for (vtkIdType controlPointIndex = 0; controlPointIndex < numberOfControlPoints; ++controlPointIndex)
+      {
+        controlPoints->ControlPointColors->GetTypedTuple(controlPointIndex, color);
+        vtkIdType firstGlyphPoint = controlPointIndex * numberOfGlyphPointsPerControlPoint;
+        for (vtkIdType glyphPointIndex = firstGlyphPoint; glyphPointIndex < firstGlyphPoint + numberOfGlyphPointsPerControlPoint; ++glyphPointIndex)
+        {
+          controlPoints->GlyphControlPointColors->SetTypedTuple(glyphPointIndex, color);
+        }
+      }
+    }
+    controlPoints->GlyphControlPointColors->Modified();
+    glyphOutput->GetPointData()->AddArray(controlPoints->GlyphControlPointColors);
+    glyphOutput->GetPointData()->SetActiveScalars(controlPoints->GlyphControlPointColors->GetName());
+    glyphOutput->Modified();
+
+    controlPoints->Mapper->SetScalarVisibility(glyphColorsValid);
+  }
 }
 
 //----------------------------------------------------------------------

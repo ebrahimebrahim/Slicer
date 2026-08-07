@@ -29,6 +29,7 @@
 #include "vtkLine.h"
 #include "vtkLineSource.h"
 #include "vtkLookupTable.h"
+#include "vtkMath.h"
 #include "vtkMarkupsGlyphSource2D.h"
 #include "vtkMRMLSliceNode.h"
 #include "vtkMRMLViewNode.h"
@@ -45,11 +46,30 @@
 #include "vtkTransform.h"
 #include "vtkTransformPolyDataFilter.h"
 #include "vtkTubeFilter.h"
+#include "vtkUnsignedCharArray.h"
 
 // MRML includes
+#include <vtkMRMLColorNode.h>
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLMeasurement.h>
 #include <vtkMRMLTransformNode.h>
+
+// STD includes
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+constexpr const char* CONTROL_POINT_SOURCE_INDICES_ARRAY_NAME = "controlPointSourceIndices";
+constexpr const char* CONTROL_POINT_COLORS_ARRAY_NAME = "controlPointColors";
+
+unsigned char ColorComponentToUnsignedChar(double component)
+{
+  double clampedComponent = std::clamp(component, 0.0, 1.0);
+  return static_cast<unsigned char>(clampedComponent * 255.0 + 0.5);
+}
+}
 
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeline()
@@ -75,6 +95,20 @@ vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeli
   this->ControlPointsPolyData = vtkSmartPointer<vtkPolyData>::New();
   this->ControlPointsPolyData->SetPoints(this->ControlPoints);
   this->ControlPointsPolyData->GetPointData()->SetNormals(controlPointNormals);
+
+  this->ControlPointSourceIndices = vtkSmartPointer<vtkIdTypeArray>::New();
+  this->ControlPointSourceIndices->SetName(CONTROL_POINT_SOURCE_INDICES_ARRAY_NAME);
+  this->ControlPointSourceIndices->Allocate(100);
+  this->ControlPointSourceIndices->InsertNextValue(-1);
+  this->ControlPointsPolyData->GetPointData()->AddArray(this->ControlPointSourceIndices);
+
+  this->ControlPointColors = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  this->ControlPointColors->SetName(CONTROL_POINT_COLORS_ARRAY_NAME);
+  this->ControlPointColors->SetNumberOfComponents(4);
+  this->ControlPointColors->Allocate(400);
+  unsigned char initialColor[4] = { 255, 255, 255, 255 };
+  this->ControlPointColors->InsertNextTypedTuple(initialColor);
+  this->ControlPointsPolyData->GetPointData()->AddArray(this->ControlPointColors);
 
   this->LabelControlPoints = vtkSmartPointer<vtkPoints>::New();
   this->LabelControlPoints->Allocate(100);
@@ -397,6 +431,7 @@ vtkMRMLMarkupsNode* vtkSlicerMarkupsWidgetRepresentation::GetMarkupsNode()
 void vtkSlicerMarkupsWidgetRepresentation::SetMarkupsNode(vtkMRMLMarkupsNode* markupsNode)
 {
   this->MarkupsNode = markupsNode;
+  this->CurveClosed = markupsNode && markupsNode->GetCurveClosed();
 }
 
 //-----------------------------------------------------------------------------
@@ -496,6 +531,149 @@ void vtkSlicerMarkupsWidgetRepresentation::BuildLine(vtkPolyData* linePolyData, 
 void vtkSlicerMarkupsWidgetRepresentation::UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData)
 {
   this->UpdateFromMRMLInternal(caller, event, callData);
+  this->UpdateControlPointColorsFromMRML();
+}
+
+//----------------------------------------------------------------------
+bool vtkSlicerMarkupsWidgetRepresentation::IsControlPointScalarColoringEnabled(int controlPointType)
+{
+  if (controlPointType != Unselected && controlPointType != Selected)
+  {
+    // Active and projected control points retain their existing interaction and projection colors.
+    return false;
+  }
+  if (!this->MarkupsDisplayNode || !this->GetMarkupsNode() || !this->IsDisplayable() || !this->MarkupsDisplayNode->GetControlPointScalarVisibility())
+  {
+    return false;
+  }
+
+  if (this->MarkupsDisplayNode->GetFolderDisplayOverrideAllowed())
+  {
+    vtkMRMLDisplayableNode* displayableNode = this->MarkupsDisplayNode->GetDisplayableNode();
+    if (vtkMRMLFolderDisplayNode::GetOverridingHierarchyDisplayNode(displayableNode))
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::UpdateControlPointColorsFromMRML()
+{
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  vtkMRMLMeasurement* measurement = this->MarkupsDisplayNode ? this->MarkupsDisplayNode->GetActiveControlPointMeasurement() : nullptr;
+  vtkDoubleArray* measurementValues = this->MarkupsDisplayNode ? this->MarkupsDisplayNode->GetActiveControlPointScalarArray() : nullptr;
+
+  int numberOfComponents = measurementValues ? measurementValues->GetNumberOfComponents() : 0;
+  bool measurementSizeMatches = markupsNode && measurement && measurementValues && measurementValues->GetNumberOfTuples() == markupsNode->GetNumberOfControlPoints();
+
+  vtkMRMLColorNode* colorNode = this->MarkupsDisplayNode ? this->MarkupsDisplayNode->GetColorNode() : nullptr;
+  bool mapTerminologyRows = measurementSizeMatches && numberOfComponents == 1 && colorNode && colorNode->GetContainsTerminology() && this->MarkupsDisplayNode
+    && this->MarkupsDisplayNode->GetScalarRangeFlag() == vtkMRMLDisplayNode::UseColorNodeScalarRange;
+  vtkSmartPointer<vtkLookupTable> colorMap;
+  bool mapSingleComponentScalars = false;
+  if (measurementSizeMatches && numberOfComponents == 1 && this->MarkupsDisplayNode && !mapTerminologyRows
+      && this->MarkupsDisplayNode->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseDirectMapping)
+  {
+    if (colorNode && colorNode->GetLookupTable())
+    {
+      colorMap.TakeReference(colorNode->CreateLookupTableCopy());
+      if (colorMap)
+      {
+        const int scalarRangeFlag = this->MarkupsDisplayNode->GetScalarRangeFlag();
+        bool scalarRangeValid = true;
+        if (scalarRangeFlag != vtkMRMLDisplayNode::UseDirectMapping && scalarRangeFlag != vtkMRMLDisplayNode::UseColorNodeScalarRange)
+        {
+          const double* scalarRange = this->MarkupsDisplayNode->GetScalarRange();
+          scalarRangeValid = std::isfinite(scalarRange[0]) && std::isfinite(scalarRange[1]) && scalarRange[0] <= scalarRange[1];
+          if (scalarRangeValid)
+          {
+            colorMap->SetTableRange(scalarRange);
+          }
+        }
+        mapSingleComponentScalars = scalarRangeValid;
+      }
+    }
+  }
+
+  bool mapDirectColors = measurementSizeMatches && (numberOfComponents == 3 || numberOfComponents == 4) && this->MarkupsDisplayNode
+    && this->MarkupsDisplayNode->GetScalarRangeFlag() == vtkMRMLDisplayNode::UseDirectMapping;
+
+  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
+  {
+    ControlPointsPipeline* controlPoints = this->ControlPoints[controlPointType];
+    if (!controlPoints)
+    {
+      continue;
+    }
+
+    vtkIdType numberOfPipelinePoints = controlPoints->ControlPoints->GetNumberOfPoints();
+    controlPoints->ControlPointColors->SetNumberOfTuples(numberOfPipelinePoints);
+
+    double* fallbackColorDouble = this->GetWidgetColor(controlPointType);
+    unsigned char fallbackColor[4] = { ColorComponentToUnsignedChar(fallbackColorDouble[0]),
+                                       ColorComponentToUnsignedChar(fallbackColorDouble[1]),
+                                       ColorComponentToUnsignedChar(fallbackColorDouble[2]),
+                                       255 };
+
+    bool useScalarColors = this->IsControlPointScalarColoringEnabled(controlPointType);
+    bool sourceIndicesMatch = controlPoints->ControlPointSourceIndices->GetNumberOfValues() == numberOfPipelinePoints;
+    for (vtkIdType pipelinePointIndex = 0; pipelinePointIndex < numberOfPipelinePoints; ++pipelinePointIndex)
+    {
+      unsigned char mappedColor[4] = { fallbackColor[0], fallbackColor[1], fallbackColor[2], fallbackColor[3] };
+      vtkIdType sourceControlPointIndex = sourceIndicesMatch ? controlPoints->ControlPointSourceIndices->GetValue(pipelinePointIndex) : -1;
+      bool sourceIndexValid = useScalarColors && measurementSizeMatches && sourceControlPointIndex >= 0 && sourceControlPointIndex < markupsNode->GetNumberOfControlPoints();
+
+      if (sourceIndexValid && mapTerminologyRows)
+      {
+        double scalarValue = measurementValues->GetComponent(sourceControlPointIndex, 0);
+        if (std::isfinite(scalarValue) && scalarValue >= 0.0 && scalarValue < colorNode->GetNumberOfColors() && std::floor(scalarValue) == scalarValue)
+        {
+          int colorIndex = static_cast<int>(scalarValue);
+          double color[4] = { 0.0, 0.0, 0.0, 1.0 };
+          if (colorNode->GetColorDefined(colorIndex) && colorNode->GetColor(colorIndex, color))
+          {
+            mappedColor[0] = ColorComponentToUnsignedChar(color[0]);
+            mappedColor[1] = ColorComponentToUnsignedChar(color[1]);
+            mappedColor[2] = ColorComponentToUnsignedChar(color[2]);
+            mappedColor[3] = ColorComponentToUnsignedChar(color[3]);
+          }
+        }
+      }
+      else if (sourceIndexValid && mapSingleComponentScalars)
+      {
+        double scalarValue = measurementValues->GetComponent(sourceControlPointIndex, 0);
+        if (std::isfinite(scalarValue))
+        {
+          const unsigned char* color = colorMap->MapValue(scalarValue);
+          std::copy(color, color + 4, mappedColor);
+        }
+      }
+      else if (sourceIndexValid && mapDirectColors)
+      {
+        bool tupleIsFinite = true;
+        for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+        {
+          if (!std::isfinite(measurementValues->GetComponent(sourceControlPointIndex, componentIndex)))
+          {
+            tupleIsFinite = false;
+            break;
+          }
+        }
+        if (tupleIsFinite)
+        {
+          mappedColor[0] = ColorComponentToUnsignedChar(measurementValues->GetComponent(sourceControlPointIndex, 0));
+          mappedColor[1] = ColorComponentToUnsignedChar(measurementValues->GetComponent(sourceControlPointIndex, 1));
+          mappedColor[2] = ColorComponentToUnsignedChar(measurementValues->GetComponent(sourceControlPointIndex, 2));
+          mappedColor[3] = numberOfComponents == 4 ? ColorComponentToUnsignedChar(measurementValues->GetComponent(sourceControlPointIndex, 3)) : 255;
+        }
+      }
+      controlPoints->ControlPointColors->SetTypedTuple(pipelinePointIndex, mappedColor);
+    }
+    controlPoints->ControlPointColors->Modified();
+    controlPoints->ControlPointsPolyData->Modified();
+  }
 }
 
 //----------------------------------------------------------------------

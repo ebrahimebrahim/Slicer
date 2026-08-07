@@ -293,6 +293,17 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
   {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[controlPointType]);
 
+    controlPoints->ControlPoints->SetNumberOfPoints(0);
+    controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
+    controlPoints->ControlPointSourceIndices->SetNumberOfValues(0);
+
+    controlPoints->LabelControlPoints->SetNumberOfPoints(0);
+    controlPoints->LabelControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
+
+    controlPoints->Labels->SetNumberOfValues(0);
+    controlPoints->LabelsPriority->SetNumberOfValues(0);
+    controlPoints->ControlPointIndices->SetNumberOfValues(0);
+
     if (controlPointType == Project || controlPointType == ProjectBack)
     {
       // no projection display in 3D
@@ -307,16 +318,6 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
 
     controlPoints->GlyphMapper->SetScaleFactor(this->ControlPointSize);
     controlPoints->OccludedGlyphMapper->SetScaleFactor(this->ControlPointSize);
-
-    controlPoints->ControlPoints->SetNumberOfPoints(0);
-    controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
-
-    controlPoints->LabelControlPoints->SetNumberOfPoints(0);
-    controlPoints->LabelControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
-
-    controlPoints->Labels->SetNumberOfValues(0);
-    controlPoints->LabelsPriority->SetNumberOfValues(0);
-    controlPoints->ControlPointIndices->SetNumberOfValues(0);
 
     for (int pointIndex = 0; pointIndex < numPoints; ++pointIndex)
     {
@@ -354,6 +355,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
       markupsNode->GetNthControlPointNormalWorld(pointIndex, pointNormalWorld);
 
       controlPoints->ControlPoints->InsertNextPoint(worldPos);
+      controlPoints->ControlPointSourceIndices->InsertNextValue(pointIndex);
 
       /* No offset for 3D actors - we may revisit this in the future
       (we could also use text margins to add some space).
@@ -373,6 +375,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     {
       controlPoints->ControlPoints->Modified();
       controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->Modified();
+      controlPoints->ControlPointSourceIndices->Modified();
       controlPoints->ControlPointsPolyData->Modified();
 
       controlPoints->LabelControlPoints->Modified();
@@ -394,6 +397,28 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
       controlPoints->LabelsActor->SetVisibility(false);
       controlPoints->LabelsOccludedActor->SetVisibility(false);
     }
+  }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::UpdateControlPointColorsFromMRML()
+{
+  Superclass::UpdateControlPointColorsFromMRML();
+
+  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
+  {
+    ControlPointsPipeline3D* controlPoints = this->GetControlPointsPipeline(controlPointType);
+    bool scalarVisibility = this->IsControlPointScalarColoringEnabled(controlPointType);
+
+    controlPoints->GlyphMapper->SetScalarModeToUsePointFieldData();
+    controlPoints->GlyphMapper->SelectColorArray(controlPoints->ControlPointColors->GetName());
+    controlPoints->GlyphMapper->SetColorModeToDirectScalars();
+    controlPoints->GlyphMapper->SetScalarVisibility(scalarVisibility);
+
+    controlPoints->OccludedGlyphMapper->SetScalarModeToUsePointFieldData();
+    controlPoints->OccludedGlyphMapper->SelectColorArray(controlPoints->ControlPointColors->GetName());
+    controlPoints->OccludedGlyphMapper->SetColorModeToDirectScalars();
+    controlPoints->OccludedGlyphMapper->SetScalarVisibility(scalarVisibility);
   }
 }
 

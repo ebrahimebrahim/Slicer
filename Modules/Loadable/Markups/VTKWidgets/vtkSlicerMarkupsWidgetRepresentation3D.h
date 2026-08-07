@@ -101,6 +101,8 @@ protected:
 
   void UpdateControlPointSize() override;
 
+  void UpdateControlPointColorsFromMRML() override;
+
   class ControlPointsPipeline3D : public ControlPointsPipeline
   {
   public:
