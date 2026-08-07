@@ -16,16 +16,21 @@
 ==============================================================================*/
 
 // Qt includes
+#include <QAction>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
+#include <QColor>
 #include <QDebug>
+#include <QIcon>
 #include <QInputDialog>
 #include <QList>
 #include <QMenu>
 #include <QMessageBox>
 #include <QModelIndex>
 #include <QMouseEvent>
+#include <QPixmap>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QShortcut>
 #include <QSignalMapper>
@@ -33,6 +38,7 @@
 #include <QTableWidgetItem>
 #include <QSharedPointer>
 #include <QSpinBox>
+#include <QToolButton>
 
 // SlicerQt includes
 #include <qSlicerCoreApplication.h>
@@ -49,8 +55,13 @@
 #include "qMRMLSubjectHierarchyModel.h"
 #include "qMRMLUtils.h"
 #include "qSlicerApplication.h"
+#include "qSlicerTerminologyNavigatorWidget.h"
+#include "qSlicerTerminologySelectorDialog.h"
+#include "vtkSlicerTerminologiesModuleLogic.h"
 
 // MRML includes
+#include "vtkMRMLColorNode.h"
+#include "vtkMRMLColorTableNode.h"
 #include "vtkMRMLColorLegendDisplayNode.h"
 #include "vtkMRMLInteractionNode.h"
 #include "vtkMRMLScene.h"
@@ -77,14 +88,20 @@
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsFiducialStorageNode.h"
 #include "vtkMRMLMarkupsNode.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkSlicerMarkupsLogic.h"
 #include "qMRMLMarkupsToolBar.h"
 
 // VTK includes
+#include <vtkAssignAttribute.h>
+#include <vtkDoubleArray.h>
 #include <vtkMath.h>
 #include <vtkNew.h>
+#include <vtkSmartPointer.h>
 #include "vtkPoints.h"
-#include <math.h>
+#include <cmath>
+#include <limits>
+#include <vector>
 
 static const int JUMP_MODE_COMBOBOX_INDEX_IGNORE = 0;
 static const int JUMP_MODE_COMBOBOX_INDEX_OFFSET = 1;
@@ -94,6 +111,72 @@ static const char* NAME_PROPERTY = "name";
 static const int COORDINATE_COMBOBOX_INDEX_WORLD = 0;
 static const int COORDINATE_COMBOBOX_INDEX_LOCAL = 1;
 static const int COORDINATE_COMBOBOX_INDEX_HIDE = 2;
+
+namespace
+{
+//-----------------------------------------------------------------------------
+bool isTerminologyCategoryColorNode(vtkMRMLColorNode* colorNode)
+{
+  if (!colorNode)
+  {
+    return false;
+  }
+  if (colorNode->GetContainsTerminology())
+  {
+    return true;
+  }
+  vtkMRMLColorTableNode* colorTableNode = vtkMRMLColorTableNode::SafeDownCast(colorNode);
+  return colorTableNode && colorTableNode->GetType() == vtkMRMLColorNode::User && colorTableNode->GetNumberOfColors() == 0;
+}
+
+//-----------------------------------------------------------------------------
+vtkMRMLColorNode* terminologyColorNode(vtkMRMLMarkupsNode* markupsNode,
+                                       vtkMRMLMarkupsDisplayNode* displayNode,
+                                       vtkMRMLMeasurement* measurement)
+{
+  if (!markupsNode || !displayNode || !measurement || displayNode->GetActiveControlPointMeasurement() != measurement ||
+      displayNode->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseColorNodeScalarRange)
+  {
+    return nullptr;
+  }
+
+  vtkDoubleArray* values = measurement->GetControlPointValues();
+  if (!vtkMRMLStaticMeasurement::SafeDownCast(measurement) || !values || values->GetNumberOfComponents() != 1 ||
+      values->GetNumberOfTuples() != markupsNode->GetNumberOfControlPoints())
+  {
+    return nullptr;
+  }
+
+  vtkMRMLColorNode* colorNode = displayNode->GetColorNode();
+  if (!isTerminologyCategoryColorNode(colorNode))
+  {
+    return nullptr;
+  }
+  return colorNode;
+}
+
+//-----------------------------------------------------------------------------
+bool categoryIndexFromValue(vtkMRMLColorNode* colorNode, double value, int& categoryIndex)
+{
+  if (!colorNode || !std::isfinite(value) || value < 0.0 || value > static_cast<double>(std::numeric_limits<int>::max()) || std::floor(value) != value)
+  {
+    return false;
+  }
+  categoryIndex = static_cast<int>(value);
+  return categoryIndex < colorNode->GetNumberOfColors() && colorNode->GetColorDefined(categoryIndex);
+}
+
+//-----------------------------------------------------------------------------
+int controlPointIndexFromObject(QObject* object, vtkMRMLMarkupsNode* markupsNode)
+{
+  if (!object || !markupsNode)
+  {
+    return -1;
+  }
+  const QByteArray controlPointId = object->property("controlPointId").toString().toUtf8();
+  return controlPointId.isEmpty() ? -1 : markupsNode->GetControlPointIndexByID(controlPointId.constData());
+}
+} // namespace
 
 // extern qSlicerMarkupsOptionsWidgetsFactory* qSlicerMarkupsOptionsWidgetsFactory::Instance = nullptr;
 //-----------------------------------------------------------------------------
@@ -144,6 +227,7 @@ public:
     RColumn,
     AColumn,
     SColumn,
+    MeasurementColumn,
     PositionColumn
   };
 
@@ -185,6 +269,10 @@ private:
 
   // Markups options widgets
   QList<qMRMLMarkupsAbstractOptionsWidget*> MarkupsOptionsWidgets;
+
+  vtkWeakPointer<vtkMRMLMeasurement> ActiveControlPointMeasurement;
+  vtkWeakPointer<vtkMRMLColorNode> ActiveControlPointTerminologyColorNode;
+  vtkMTimeType ActiveControlPointTerminologyColorNodeMTime{ 0 };
 };
 
 //-----------------------------------------------------------------------------
@@ -200,6 +288,7 @@ qSlicerMarkupsModuleWidgetPrivate::qSlicerMarkupsModuleWidgetPrivate(qSlicerMark
                      << qSlicerMarkupsModuleWidget::tr("Name") << qSlicerMarkupsModuleWidget::tr("Description") << qSlicerMarkupsModuleWidget::tr("R") //: right
                      << qSlicerMarkupsModuleWidget::tr("A")                                                                                            //: anterior
                      << qSlicerMarkupsModuleWidget::tr("S")                                                                                            //: superior
+                     << qSlicerMarkupsModuleWidget::tr("Measurement")
                      << qSlicerMarkupsModuleWidget::tr("Position");
 
   this->newMarkupWithCurrentDisplayPropertiesAction = nullptr;
@@ -429,6 +518,7 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::RColumn, 65);
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::AColumn, 65);
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::SColumn, 65);
+  this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn, 120);
 
   // show/hide the coordinate columns
   QObject::connect(this->coordinatesComboBox, SIGNAL(currentIndexChanged(int)), q, SLOT(onHideCoordinateColumnsToggled(int)));
@@ -452,6 +542,9 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
   visibleHeader->setIcon(QIcon(":/Icons/Small/SlicerVisibleInvisible.png"));
   visibleHeader->setToolTip((qSlicerMarkupsModuleWidget::tr("Click in this column to show/hide control points in 2D and 3D")));
   this->activeMarkupTableWidget->setColumnWidth(qSlicerMarkupsModuleWidgetPrivate::VisibleColumn, 30);
+  QTableWidgetItem* measurementHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn);
+  measurementHeader->setToolTip(qSlicerMarkupsModuleWidget::tr("Values of the measurement selected for scalar coloring"));
+  this->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn, true);
   // position is a location bubble
   QTableWidgetItem* positionHeader = this->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::PositionColumn);
   positionHeader->setText("");
@@ -485,6 +578,12 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
 
   // hide measurement settings table until markups node containing measurement is set
   this->measurementSettingsTableWidget->setVisible(false);
+
+  this->newControlPointMeasurementComponentsComboBox->addItem(qSlicerMarkupsModuleWidget::tr("Scalar"), 1);
+  this->newControlPointMeasurementComponentsComboBox->addItem(qSlicerMarkupsModuleWidget::tr("RGB"), 3);
+  this->newControlPointMeasurementComponentsComboBox->addItem(qSlicerMarkupsModuleWidget::tr("RGBA"), 4);
+  QObject::connect(this->addControlPointMeasurementPushButton, SIGNAL(clicked()), q, SLOT(onAddControlPointMeasurement()));
+  QObject::connect(this->newControlPointMeasurementNameLineEdit, SIGNAL(returnPressed()), q, SLOT(onAddControlPointMeasurement()));
 
   // Export/import
   this->ImportExportOperationButtonGroup = new QButtonGroup(this->exportImportCollapsibleButton);
@@ -911,6 +1010,31 @@ void qSlicerMarkupsModuleWidget::updateWidgetFromMRML()
   d->activeMarkupTreeView->blockSignals(wasBlocked);
   d->markupsDisplayWidget->setMRMLMarkupsNode(d->MarkupsNode);
 
+  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = d->markupsDisplayNode();
+  vtkMRMLMeasurement* activeControlPointMeasurement = markupsDisplayNode ? markupsDisplayNode->GetActiveControlPointMeasurement() : nullptr;
+  const bool activeControlPointMeasurementChanged = (d->ActiveControlPointMeasurement != activeControlPointMeasurement);
+  d->ActiveControlPointMeasurement = activeControlPointMeasurement;
+  vtkMRMLColorNode* activeTerminologyColorNode = terminologyColorNode(d->MarkupsNode, markupsDisplayNode, activeControlPointMeasurement);
+  const vtkMTimeType activeTerminologyColorNodeMTime = activeTerminologyColorNode ? activeTerminologyColorNode->GetMTime() : 0;
+  const bool activeTerminologyColorNodeChanged = d->ActiveControlPointTerminologyColorNode != activeTerminologyColorNode
+    || d->ActiveControlPointTerminologyColorNodeMTime != activeTerminologyColorNodeMTime;
+  d->ActiveControlPointTerminologyColorNode = activeTerminologyColorNode;
+  d->ActiveControlPointTerminologyColorNodeMTime = activeTerminologyColorNodeMTime;
+  vtkDoubleArray* activeControlPointValues = activeControlPointMeasurement ? activeControlPointMeasurement->GetControlPointValues() : nullptr;
+  const bool showMeasurementColumn = (activeControlPointValues != nullptr);
+  d->activeMarkupTableWidget->setColumnHidden(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn, !showMeasurementColumn);
+  QTableWidgetItem* measurementHeader = d->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn);
+  if (measurementHeader)
+  {
+    measurementHeader->setText(showMeasurementColumn ? QString::fromStdString(activeControlPointMeasurement->GetName()) : tr("Measurement"));
+    measurementHeader->setToolTip(
+      showMeasurementColumn
+        ? (vtkMRMLStaticMeasurement::SafeDownCast(activeControlPointMeasurement)
+             ? tr("Editable per-control-point values. Use 'undefined' to clear a value.")
+             : tr("Computed per-control-point values (read-only)."))
+        : tr("Values of the measurement selected for scalar coloring"));
+  }
+
   // Color legend
   vtkMRMLColorLegendDisplayNode* colorLegendNode = nullptr;
   vtkMRMLDisplayNode* displayNode = d->markupsDisplayWidget->mrmlMarkupsDisplayNode();
@@ -965,6 +1089,11 @@ void qSlicerMarkupsModuleWidget::updateWidgetFromMRML()
   {
     // force full update of the table
     // (after node change or batch update with multiple rows added or deleted)
+    this->updateRows();
+  }
+  else if (activeControlPointMeasurementChanged || activeTerminologyColorNodeChanged)
+  {
+    // The measurement column source or terminology presentation changed.
     this->updateRows();
   }
   // Update options widgets
@@ -1215,6 +1344,152 @@ void qSlicerMarkupsModuleWidget::updateRow(int controlPointIndex)
     {
       d->activeMarkupTableWidget->setItem(controlPointIndex, column, item);
     }
+  }
+
+  // Active per-control-point measurement
+  column = qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn;
+  item = d->activeMarkupTableWidget->item(controlPointIndex, column);
+  isNewItem = false;
+  if (!item)
+  {
+    item = new QTableWidgetItem();
+    isNewItem = true;
+  }
+
+  vtkMRMLMeasurement* measurement = d->ActiveControlPointMeasurement;
+  vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+  const int numberOfComponents = values ? values->GetNumberOfComponents() : 0;
+  const bool supportedComponentCount = (numberOfComponents == 1 || numberOfComponents == 3 || numberOfComponents == 4);
+  const bool hasTuple = values && controlPointIndex < values->GetNumberOfTuples();
+  const bool valuesAligned = values && values->GetNumberOfTuples() == markupsNode->GetNumberOfControlPoints();
+  const bool editable = vtkMRMLStaticMeasurement::SafeDownCast(measurement) && supportedComponentCount && valuesAligned;
+  vtkMRMLColorNode* categoryColorNode = terminologyColorNode(markupsNode, d->markupsDisplayNode(), measurement);
+  int categoryIndex = -1;
+  const bool validCategory = categoryColorNode && hasTuple && categoryIndexFromValue(categoryColorNode, values->GetValue(controlPointIndex), categoryIndex);
+
+  QString measurementText;
+  if (categoryColorNode)
+  {
+    measurementText = validCategory ? QString::fromUtf8(categoryColorNode->GetColorName(categoryIndex)) : tr("Set category...");
+  }
+  else if (hasTuple && supportedComponentCount)
+  {
+    QStringList componentTexts;
+    for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+    {
+      const double value = values->GetComponent(controlPointIndex, componentIndex);
+      componentTexts << (std::isfinite(value) ? QString::number(value, 'g', 12) : tr("undefined"));
+    }
+    measurementText = componentTexts.join(", ");
+  }
+  else if (values && !supportedComponentCount)
+  {
+    measurementText = tr("%1 components (unsupported)").arg(numberOfComponents);
+  }
+  else if (values)
+  {
+    measurementText = tr("unavailable");
+  }
+  if (item->text() != measurementText)
+  {
+    item->setText(measurementText);
+  }
+
+  Qt::ItemFlags measurementItemFlags = item->flags();
+  measurementItemFlags &= ~(Qt::ItemIsEditable | Qt::ItemIsUserCheckable);
+  if (editable && !categoryColorNode)
+  {
+    measurementItemFlags |= Qt::ItemIsEditable;
+    item->setToolTip(numberOfComponents == 1 ? tr("Enter a number, or 'undefined' to clear the value.")
+                                             : tr("Enter %1 normalized components (0 to 1), separated by commas, or 'undefined' to clear the color.")
+                                                 .arg(numberOfComponents));
+  }
+  else if (measurement && !vtkMRMLStaticMeasurement::SafeDownCast(measurement))
+  {
+    item->setToolTip(tr("This measurement is computed and cannot be edited."));
+  }
+  else if (values && !valuesAligned)
+  {
+    item->setToolTip(tr("The measurement does not contain one tuple per control point and cannot be edited."));
+  }
+  else if (values && !supportedComponentCount)
+  {
+    item->setToolTip(tr("Only scalar, RGB, and RGBA measurements can be used for control-point coloring."));
+  }
+  else
+  {
+    item->setToolTip(QString());
+  }
+  item->setFlags(measurementItemFlags);
+  if (isNewItem)
+  {
+    d->activeMarkupTableWidget->setItem(controlPointIndex, column, item);
+  }
+
+  QWidget* measurementCellWidget = d->activeMarkupTableWidget->cellWidget(controlPointIndex, column);
+  if (categoryColorNode)
+  {
+    QToolButton* categoryButton = qobject_cast<QToolButton*>(measurementCellWidget);
+    if (!categoryButton)
+    {
+      if (measurementCellWidget)
+      {
+        d->activeMarkupTableWidget->removeCellWidget(controlPointIndex, column);
+        measurementCellWidget->deleteLater();
+      }
+      categoryButton = new QToolButton(d->activeMarkupTableWidget);
+      categoryButton->setObjectName("controlPointTerminologyButton");
+      categoryButton->setAutoRaise(true);
+      categoryButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+      categoryButton->setPopupMode(QToolButton::MenuButtonPopup);
+      QObject::connect(categoryButton, SIGNAL(clicked()), this, SLOT(onControlPointTerminologyButtonClicked()));
+
+      QMenu* categoryMenu = new QMenu(categoryButton);
+      QAction* clearCategoryAction = categoryMenu->addAction(tr("Clear category"));
+      clearCategoryAction->setObjectName("clearControlPointCategoryAction");
+      QObject::connect(clearCategoryAction, SIGNAL(triggered()), this, SLOT(onClearControlPointCategory()));
+      categoryMenu->addSeparator();
+      QAction* copyNameAction = categoryMenu->addAction(tr("Copy category name to point label"));
+      copyNameAction->setObjectName("copyControlPointCategoryNameToLabelAction");
+      QObject::connect(copyNameAction, SIGNAL(triggered()), this, SLOT(onCopyControlPointCategoryNameToLabel()));
+      categoryButton->setMenu(categoryMenu);
+      d->activeMarkupTableWidget->setCellWidget(controlPointIndex, column, categoryButton);
+    }
+
+    const QString controlPointId = QString::fromStdString(markupsNode->GetNthControlPointID(controlPointIndex));
+    categoryButton->setProperty("controlPointId", controlPointId);
+    categoryButton->setText(validCategory ? QString::fromUtf8(categoryColorNode->GetColorName(categoryIndex)) : tr("Set category..."));
+    if (validCategory)
+    {
+      double rgba[4] = { 0.0, 0.0, 0.0, 1.0 };
+      categoryColorNode->GetColor(categoryIndex, rgba);
+      categoryButton->setIcon(QIcon(qMRMLUtils::createColorPixmap(qApp->style(), QColor::fromRgbF(rgba[0], rgba[1], rgba[2], rgba[3]))));
+      categoryButton->setToolTip(
+        tr("Color-table row %1. Click to choose a terminology category; the point label remains unchanged.").arg(categoryIndex));
+    }
+    else
+    {
+      categoryButton->setIcon(QIcon());
+      categoryButton->setToolTip(tr("Click to assign a terminology category. The point label remains unchanged."));
+    }
+
+    QAction* clearCategoryAction = categoryButton->menu() ? categoryButton->menu()->findChild<QAction*>("clearControlPointCategoryAction") : nullptr;
+    if (clearCategoryAction)
+    {
+      clearCategoryAction->setProperty("controlPointId", controlPointId);
+      clearCategoryAction->setEnabled(validCategory);
+    }
+    QAction* copyNameAction = categoryButton->menu() ? categoryButton->menu()->findChild<QAction*>("copyControlPointCategoryNameToLabelAction") : nullptr;
+    if (copyNameAction)
+    {
+      copyNameAction->setProperty("controlPointId", controlPointId);
+      copyNameAction->setEnabled(validCategory);
+    }
+  }
+  else if (measurementCellWidget)
+  {
+    d->activeMarkupTableWidget->removeCellWidget(controlPointIndex, column);
+    measurementCellWidget->deleteLater();
   }
 
   // position status
@@ -2091,6 +2366,61 @@ void qSlicerMarkupsModuleWidget::onActiveMarkupTableCellChanged(int row, int col
       // qDebug() << QString("Cell changed: no change in location bigger than ") + QString::number(minChange);
     }
   }
+  else if (column == qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn)
+  {
+    vtkMRMLMeasurement* measurement = d->ActiveControlPointMeasurement;
+    vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+    vtkMRMLStaticMeasurement* staticMeasurement = vtkMRMLStaticMeasurement::SafeDownCast(measurement);
+    const int numberOfComponents = values ? values->GetNumberOfComponents() : 0;
+    if (!staticMeasurement || !values || values->GetNumberOfTuples() != d->MarkupsNode->GetNumberOfControlPoints() ||
+        (numberOfComponents != 1 && numberOfComponents != 3 && numberOfComponents != 4) || n < 0 || n >= values->GetNumberOfTuples())
+    {
+      this->updateRow(row);
+      return;
+    }
+
+    std::vector<double> tuple(numberOfComponents, std::numeric_limits<double>::quiet_NaN());
+    const QString text = item->text().trimmed();
+    bool valid = true;
+    if (!text.isEmpty() && text.compare(tr("undefined"), Qt::CaseInsensitive) != 0 && text.compare("nan", Qt::CaseInsensitive) != 0)
+    {
+      const QStringList componentTexts = text.split(QRegularExpression("[,;\\s]+"), Qt::SkipEmptyParts);
+      valid = (componentTexts.size() == numberOfComponents);
+      for (int componentIndex = 0; valid && componentIndex < numberOfComponents; ++componentIndex)
+      {
+        const QString componentText = componentTexts[componentIndex];
+        if (componentText.compare(tr("undefined"), Qt::CaseInsensitive) == 0 || componentText.compare("nan", Qt::CaseInsensitive) == 0)
+        {
+          continue;
+        }
+        bool conversionSuccessful = false;
+        const double value = componentText.toDouble(&conversionSuccessful);
+        valid = conversionSuccessful && std::isfinite(value);
+        if (valid && numberOfComponents > 1)
+        {
+          valid = (value >= 0.0 && value <= 1.0);
+        }
+        if (valid)
+        {
+          tuple[componentIndex] = value;
+        }
+      }
+    }
+
+    if (!valid)
+    {
+      this->updateRow(row);
+      QMessageBox::warning(this,
+                           tr("Invalid measurement value"),
+                           numberOfComponents == 1
+                             ? tr("Enter one finite number, or 'undefined'.")
+                             : tr("Enter %1 normalized values between 0 and 1, separated by commas, or 'undefined'.").arg(numberOfComponents));
+      return;
+    }
+
+    values->SetTuple(n, tuple.data());
+    values->Modified();
+  }
   else if (column == qSlicerMarkupsModuleWidgetPrivate::PositionColumn)
   {
     bool persistenceModeEnabled = d->getPersistanceModeEnabled();
@@ -2610,6 +2940,11 @@ void qSlicerMarkupsModuleWidget::setMRMLMarkupsNode(vtkMRMLMarkupsNode* markupsN
   qvtkReconnect(d->MarkupsNode, markupsNode, vtkMRMLTransformableNode::TransformModifiedEvent, this, SLOT(onActiveMarkupsNodeTransformModifiedEvent()));
 
   // measurements
+  qvtkReconnect(d->MarkupsNode,
+                markupsNode,
+                vtkMRMLMarkupsNode::MeasurementsModifiedEvent,
+                this,
+                SLOT(onActiveMarkupsNodePointModifiedEvent(vtkObject*, void*)));
   if (d->MarkupsNode)
   {
     qvtkDisconnect(d->MarkupsNode->Measurements, vtkCommand::ModifiedEvent, this, SLOT(onMeasurementsCollectionModified()));
@@ -3052,6 +3387,15 @@ void qSlicerMarkupsModuleWidget::onMeasurementModified(vtkObject* caller)
   vtkMRMLMeasurement* measurement = vtkMRMLMeasurement::SafeDownCast(caller);
   if (measurement)
   {
+    if (measurement == d->ActiveControlPointMeasurement && measurement->GetControlPointValues())
+    {
+      QTableWidgetItem* measurementHeader = d->activeMarkupTableWidget->horizontalHeaderItem(qSlicerMarkupsModuleWidgetPrivate::MeasurementColumn);
+      if (measurementHeader)
+      {
+        measurementHeader->setText(QString::fromStdString(measurement->GetName()));
+      }
+    }
+
     QString measurementName = QString::fromStdString(measurement->GetName());
     if (measurementName.isEmpty())
     {
@@ -3168,6 +3512,372 @@ void qSlicerMarkupsModuleWidget::onMeasurementEnabledCheckboxToggled(bool on)
       currentMeasurement->SetEnabled(on);
     }
   }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onControlPointTerminologyButtonClicked()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  QObject* button = this->sender();
+  vtkMRMLMarkupsNode* markupsNode = d->MarkupsNode;
+  vtkMRMLMarkupsDisplayNode* displayNode = d->markupsDisplayNode();
+  vtkMRMLMeasurement* measurement = d->ActiveControlPointMeasurement;
+  vtkMRMLColorNode* colorNode = terminologyColorNode(markupsNode, displayNode, measurement);
+  const int controlPointIndex = controlPointIndexFromObject(button, markupsNode);
+  if (!colorNode || controlPointIndex < 0)
+  {
+    return;
+  }
+
+  vtkSlicerTerminologiesModuleLogic* terminologiesLogic =
+    qSlicerCoreApplication::application()
+      ? vtkSlicerTerminologiesModuleLogic::SafeDownCast(qSlicerCoreApplication::application()->moduleLogic("Terminologies"))
+      : nullptr;
+  if (!terminologiesLogic)
+  {
+    QMessageBox::warning(this, tr("Terminology unavailable"), tr("The Terminologies module is not available."));
+    return;
+  }
+
+  qSlicerTerminologyNavigatorWidget::TerminologyInfoBundle terminologyInfo;
+  int currentCategoryIndex = -1;
+  const double currentValue = measurement->GetControlPointValues()->GetValue(controlPointIndex);
+  if (categoryIndexFromValue(colorNode, currentValue, currentCategoryIndex))
+  {
+    vtkSlicerTerminologyEntry* entry = terminologyInfo.GetTerminologyEntry();
+    if (vtkSlicerTerminologiesModuleLogic::DeserializeTerminologyEntry(colorNode->GetTerminologyAsString(currentCategoryIndex), entry))
+    {
+      terminologiesLogic->UpdateEntryFromLoadedTerminologies(entry, std::vector<std::string>(), std::vector<std::string>());
+    }
+
+    double rgba[4] = { 0.0, 0.0, 0.0, 1.0 };
+    colorNode->GetColor(currentCategoryIndex, rgba);
+    const QColor color = QColor::fromRgbF(rgba[0], rgba[1], rgba[2], rgba[3]);
+    terminologyInfo = qSlicerTerminologyNavigatorWidget::TerminologyInfoBundle(
+      entry, QString::fromUtf8(colorNode->GetColorName(currentCategoryIndex)), true, color, true, QColor());
+  }
+
+  const QString controlPointId = button->property("controlPointId").toString();
+  vtkWeakPointer<vtkMRMLMarkupsNode> originalMarkupsNode = markupsNode;
+  vtkWeakPointer<vtkMRMLMeasurement> originalMeasurement = measurement;
+  vtkWeakPointer<vtkMRMLMarkupsDisplayNode> originalDisplayNode = displayNode;
+  vtkWeakPointer<vtkMRMLColorNode> originalColorNode = colorNode;
+  const vtkMTimeType originalColorNodeMTime = colorNode->GetMTime();
+  qSlicerTerminologySelectorDialog terminologyDialog(terminologyInfo, this);
+  terminologyDialog.setOverrideSectionVisible(false);
+  if (!terminologyDialog.exec())
+  {
+    return;
+  }
+  terminologyDialog.terminologyInfo(terminologyInfo);
+
+  const QByteArray controlPointIdUtf8 = controlPointId.toUtf8();
+  auto activeMappingIsStillValid = [&](vtkMRMLColorNode* expectedColorNode) -> bool
+  {
+    markupsNode = originalMarkupsNode;
+    measurement = originalMeasurement;
+    displayNode = originalDisplayNode;
+    if (!markupsNode || d->MarkupsNode != markupsNode || !measurement || !displayNode
+        || terminologyColorNode(markupsNode, displayNode, measurement) != expectedColorNode
+        || markupsNode->GetControlPointIndexByID(controlPointIdUtf8.constData()) < 0)
+    {
+      return false;
+    }
+    colorNode = expectedColorNode;
+    return true;
+  };
+  auto selectionIsStillValid = [&]() -> bool
+  {
+    return originalColorNode && activeMappingIsStillValid(originalColorNode) && originalColorNode->GetMTime() == originalColorNodeMTime;
+  };
+  if (!selectionIsStillValid())
+  {
+    return;
+  }
+
+  vtkSlicerTerminologyEntry* selectedEntry = terminologyInfo.GetTerminologyEntry();
+  if (!selectedEntry->GetTerminologyContextName())
+  {
+    selectedEntry->SetTerminologyContextName("");
+  }
+  const std::string selectedTerminology = vtkSlicerTerminologiesModuleLogic::SerializeTerminologyEntry(selectedEntry);
+  if (selectedTerminology.empty())
+  {
+    QMessageBox::warning(this, tr("Invalid terminology"), tr("The selected terminology could not be serialized."));
+    return;
+  }
+
+  int selectedCategoryIndex = -1;
+  if (currentCategoryIndex >= 0 && terminologiesLogic->AreTerminologyEntriesEqual(colorNode->GetTerminologyAsString(currentCategoryIndex), selectedTerminology))
+  {
+    selectedCategoryIndex = currentCategoryIndex;
+  }
+  else
+  {
+    selectedCategoryIndex = vtkSlicerTerminologiesModuleLogic::GetColorIndexByTerminology(colorNode, selectedTerminology);
+  }
+  vtkWeakPointer<vtkMRMLColorNode> assignedColorNode = originalColorNode;
+  vtkSmartPointer<vtkMRMLColorTableNode> colorTableCopy;
+  std::string colorTableCopyId;
+  auto removeColorTableCopy = [&]()
+  {
+    if (!colorTableCopy)
+    {
+      return;
+    }
+    vtkMRMLMarkupsDisplayNode* currentDisplayNode = originalDisplayNode;
+    const char* currentColorNodeId = currentDisplayNode ? currentDisplayNode->GetColorNodeID() : nullptr;
+    if (!colorTableCopyId.empty() && currentColorNodeId && colorTableCopyId == currentColorNodeId)
+    {
+      currentDisplayNode->SetAndObserveColorNodeID(originalColorNode ? originalColorNode->GetID() : nullptr);
+    }
+    vtkMRMLScene* copyScene = colorTableCopy->GetScene();
+    if (copyScene)
+    {
+      copyScene->RemoveNode(colorTableCopy);
+    }
+  };
+  if (selectedCategoryIndex < 0)
+  {
+    vtkMRMLColorTableNode* colorTableNode = vtkMRMLColorTableNode::SafeDownCast(colorNode);
+    bool addCategoryConfirmed = false;
+    if (!colorTableNode || colorTableNode->GetType() != vtkMRMLColorNode::User)
+    {
+      const QString colorNodeName = colorNode->GetName() ? QString::fromUtf8(colorNode->GetName()) : tr("unnamed color table");
+      const QMessageBox::StandardButton createCopy = QMessageBox::question(
+        this,
+        tr("Create editable color table?"),
+        tr("The selected category is not present in the read-only color table '%1'. Create an editable copy and add the category?").arg(colorNodeName));
+      if (createCopy != QMessageBox::Yes || !selectionIsStillValid() || !markupsNode->GetScene())
+      {
+        return;
+      }
+
+      const std::string copyBaseName = std::string(colorNode->GetName() ? colorNode->GetName() : "Color table") + " categories";
+      const std::string copyName = markupsNode->GetScene()->GenerateUniqueName(copyBaseName);
+      colorTableCopy.TakeReference(vtkSlicerColorLogic::CopyNode(colorNode, copyName.c_str()));
+      if (!colorTableCopy)
+      {
+        QMessageBox::warning(this, tr("Color table copy failed"), tr("An editable copy of the color table could not be created."));
+        return;
+      }
+      colorTableNode = colorTableCopy;
+      addCategoryConfirmed = true;
+    }
+
+    QString categoryName = terminologyInfo.Name.trimmed();
+    if (categoryName.isEmpty())
+    {
+      categoryName = qSlicerTerminologyNavigatorWidget::nameFromTerminology(selectedEntry);
+    }
+    if (categoryName.isEmpty())
+    {
+      categoryName = tr("Unnamed category");
+    }
+    if (!addCategoryConfirmed)
+    {
+      const QString colorNodeName = colorNode->GetName() ? QString::fromUtf8(colorNode->GetName()) : tr("unnamed color table");
+      const QMessageBox::StandardButton addCategory = QMessageBox::question(
+        this,
+        tr("Add category to color table?"),
+        tr("The selected terminology is not present in the shared color table '%1'. Add '%2' as a new row?").arg(colorNodeName, categoryName));
+      if (addCategory != QMessageBox::Yes || !selectionIsStillValid())
+      {
+        return;
+      }
+    }
+
+    QColor categoryColor = terminologyInfo.Color;
+    if (!categoryColor.isValid())
+    {
+      categoryColor = qSlicerTerminologyNavigatorWidget::recommendedColorFromTerminology(selectedEntry);
+    }
+    if (!categoryColor.isValid())
+    {
+      categoryColor = QColor::fromRgbF(0.5, 0.5, 0.5, 1.0);
+    }
+
+    const int originalNumberOfColors = colorTableNode->GetNumberOfColors();
+    selectedCategoryIndex = originalNumberOfColors;
+    const int wasModified = colorTableNode->StartModify();
+    colorTableNode->SetNumberOfColors(selectedCategoryIndex + 1);
+    const QByteArray categoryNameUtf8 = categoryName.toUtf8();
+    const bool colorAdded = colorTableNode->SetColor(selectedCategoryIndex,
+                                                     categoryNameUtf8.constData(),
+                                                     categoryColor.redF(),
+                                                     categoryColor.greenF(),
+                                                     categoryColor.blueF(),
+                                                     categoryColor.alphaF()) != 0;
+    const bool terminologyAdded = colorAdded && colorTableNode->SetTerminologyFromString(selectedCategoryIndex, selectedTerminology);
+    if (!terminologyAdded)
+    {
+      colorTableNode->SetNumberOfColors(originalNumberOfColors);
+    }
+    colorTableNode->EndModify(wasModified);
+    if (!terminologyAdded)
+    {
+      QMessageBox::warning(this, tr("Category could not be added"), tr("The selected category could not be added to the color table."));
+      return;
+    }
+
+    if (colorTableCopy)
+    {
+      if (!selectionIsStillValid())
+      {
+        return;
+      }
+      vtkWeakPointer<vtkMRMLScene> scene = markupsNode->GetScene();
+      if (!scene || !scene->AddNode(colorTableCopy))
+      {
+        QMessageBox::warning(this, tr("Color table copy failed"), tr("The editable color table could not be added to the scene."));
+        return;
+      }
+      colorTableCopyId = colorTableCopy->GetID() ? colorTableCopy->GetID() : "";
+      if (!selectionIsStillValid())
+      {
+        removeColorTableCopy();
+        return;
+      }
+      displayNode->SetAndObserveColorNodeID(colorTableCopy->GetID());
+      colorNode = colorTableCopy;
+      assignedColorNode = colorTableCopy;
+    }
+  }
+
+  if (!assignedColorNode || !activeMappingIsStillValid(assignedColorNode))
+  {
+    removeColorTableCopy();
+    return;
+  }
+  const int updatedControlPointIndex = markupsNode->GetControlPointIndexByID(controlPointIdUtf8.constData());
+  vtkDoubleArray* values = measurement->GetControlPointValues();
+  if (!values || updatedControlPointIndex < 0 || updatedControlPointIndex >= values->GetNumberOfTuples())
+  {
+    return;
+  }
+  values->SetValue(updatedControlPointIndex, selectedCategoryIndex);
+  values->Modified();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onClearControlPointCategory()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  vtkMRMLMarkupsNode* markupsNode = d->MarkupsNode;
+  vtkMRMLMeasurement* measurement = d->ActiveControlPointMeasurement;
+  vtkMRMLColorNode* colorNode = terminologyColorNode(markupsNode, d->markupsDisplayNode(), measurement);
+  const int controlPointIndex = controlPointIndexFromObject(this->sender(), markupsNode);
+  vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+  if (!colorNode || !values || controlPointIndex < 0 || controlPointIndex >= values->GetNumberOfTuples())
+  {
+    return;
+  }
+
+  values->SetValue(controlPointIndex, std::numeric_limits<double>::quiet_NaN());
+  values->Modified();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onCopyControlPointCategoryNameToLabel()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  vtkMRMLMarkupsNode* markupsNode = d->MarkupsNode;
+  vtkMRMLMeasurement* measurement = d->ActiveControlPointMeasurement;
+  vtkMRMLColorNode* colorNode = terminologyColorNode(markupsNode, d->markupsDisplayNode(), measurement);
+  const int controlPointIndex = controlPointIndexFromObject(this->sender(), markupsNode);
+  if (!colorNode || controlPointIndex < 0)
+  {
+    return;
+  }
+
+  int categoryIndex = -1;
+  vtkDoubleArray* values = measurement->GetControlPointValues();
+  if (!categoryIndexFromValue(colorNode, values->GetValue(controlPointIndex), categoryIndex))
+  {
+    return;
+  }
+  const char* categoryName = colorNode->GetColorName(categoryIndex);
+  if (categoryName && categoryName[0] != '\0')
+  {
+    markupsNode->SetNthControlPointLabel(controlPointIndex, categoryName);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onAddControlPointMeasurement()
+{
+  Q_D(qSlicerMarkupsModuleWidget);
+  if (!d->MarkupsNode)
+  {
+    return;
+  }
+
+  const QString measurementName = d->newControlPointMeasurementNameLineEdit->text().trimmed();
+  if (measurementName.isEmpty())
+  {
+    QMessageBox::warning(this, tr("Measurement name required"), tr("Enter a name for the per-control-point measurement."));
+    return;
+  }
+
+  const QByteArray measurementNameUtf8 = measurementName.toUtf8();
+  if (d->MarkupsNode->GetMeasurement(measurementNameUtf8.constData()))
+  {
+    QMessageBox::warning(this, tr("Measurement already exists"), tr("A measurement named '%1' already exists.").arg(measurementName));
+    return;
+  }
+
+  const int numberOfComponents = d->newControlPointMeasurementComponentsComboBox->currentData().toInt();
+  if (numberOfComponents != 1 && numberOfComponents != 3 && numberOfComponents != 4)
+  {
+    qWarning() << Q_FUNC_INFO << "failed: unsupported number of components" << numberOfComponents;
+    return;
+  }
+
+  vtkNew<vtkDoubleArray> values;
+  values->SetName(measurementNameUtf8.constData());
+  values->SetNumberOfComponents(numberOfComponents);
+  values->SetNumberOfTuples(d->MarkupsNode->GetNumberOfControlPoints());
+  for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+  {
+    values->FillComponent(componentIndex, std::numeric_limits<double>::quiet_NaN());
+  }
+
+  vtkNew<vtkMRMLStaticMeasurement> measurement;
+  measurement->SetName(measurementNameUtf8.constData());
+  measurement->SetControlPointValues(values);
+  d->MarkupsNode->AddMeasurement(measurement);
+
+  vtkMRMLMarkupsDisplayNode* displayNode = d->markupsDisplayNode();
+  if (displayNode)
+  {
+    const int wasModified = displayNode->StartModify();
+    displayNode->SetActiveScalar(measurementNameUtf8.constData(), vtkAssignAttribute::POINT_DATA);
+    displayNode->SetControlPointScalarVisibility(true);
+    if (numberOfComponents == 3 || numberOfComponents == 4)
+    {
+      displayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseDirectMapping);
+    }
+    else
+    {
+      if (!displayNode->GetColorNodeID())
+      {
+        displayNode->SetAndObserveColorNodeID("vtkMRMLColorTableNodeFileViridis.txt");
+      }
+      if (isTerminologyCategoryColorNode(displayNode->GetColorNode()))
+      {
+        displayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseColorNodeScalarRange);
+      }
+      else if (displayNode->GetScalarRangeFlag() == vtkMRMLDisplayNode::UseDirectMapping)
+      {
+        displayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseDataScalarRange);
+      }
+    }
+    displayNode->UpdateScalarRange();
+    displayNode->EndModify(wasModified);
+  }
+
+  d->newControlPointMeasurementNameLineEdit->clear();
+  d->newControlPointMeasurementNameLineEdit->setFocus();
 }
 
 //-----------------------------------------------------------------------------

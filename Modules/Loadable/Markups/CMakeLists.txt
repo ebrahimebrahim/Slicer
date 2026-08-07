@@ -29,6 +29,8 @@ set(MODULE_INCLUDE_DIRECTORIES
   ${qSlicerColorsModuleWidgets_INCLUDE_DIRS}
   ${vtkSlicerColorsModuleMRML_INCLUDE_DIRS}
   ${vtkSlicerColorsModuleLogic_INCLUDE_DIRS}
+  ${qSlicerTerminologiesModuleWidgets_INCLUDE_DIRS}
+  ${vtkSlicerTerminologiesModuleLogic_INCLUDE_DIRS}
   )
 
 set(MODULE_SRCS
@@ -63,6 +65,8 @@ set(MODULE_TARGET_LIBRARIES
   qSlicerColorsModuleWidgets
   vtkSlicerColorsModuleLogic
   vtkSlicerColorsModuleMRML
+  qSlicerTerminologiesModuleWidgets
+  vtkSlicerTerminologiesModuleLogic
   )
 
 set(MODULE_RESOURCES

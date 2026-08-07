@@ -248,6 +248,19 @@ public slots:
   /// Enable/disable measurement when an enable checkbox has been toggled
   void onMeasurementEnabledCheckboxToggled(bool on);
 
+  /// Add an editable per-control-point measurement using the name and
+  /// component count selected in the measurement settings panel.
+  void onAddControlPointMeasurement();
+
+  /// Select a terminology-backed category for a control point.
+  void onControlPointTerminologyButtonClicked();
+
+  /// Clear the terminology-backed category assigned to a control point.
+  void onClearControlPointCategory();
+
+  /// Explicitly copy the current category name to the control-point label.
+  void onCopyControlPointCategoryNameToLabel();
+
   /// Update set of create markups push buttons
   void onCreateMarkupsPushButtons();
 
