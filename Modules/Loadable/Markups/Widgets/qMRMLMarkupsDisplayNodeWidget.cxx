@@ -17,6 +17,10 @@
 
 // Qt includes
 #include <QColor>
+#include <QSet>
+
+// STD includes
+#include <algorithm>
 
 // CTK includes
 #include <ctkUtils.h>
@@ -33,15 +37,37 @@
 #include <vtkMRMLMarkupsFiducialNode.h>
 #include <vtkMRMLMarkupsLineNode.h>
 #include <vtkMRMLMarkupsNode.h>
+#include <vtkMRMLMeasurement.h>
 #include <vtkMRMLSelectionNode.h>
 
 // VTK includes
+#include <vtkAssignAttribute.h>
 #include <vtkDataArray.h>
+#include <vtkDataSet.h>
+#include <vtkDoubleArray.h>
 #include <vtkPointData.h>
 #include <vtkPointSet.h>
 #include <vtkProperty.h>
 #include <vtkSmartPointer.h>
 #include <vtkTextProperty.h>
+
+namespace
+{
+// An empty editable table can become a terminology table when its first row is assigned.
+bool IsTerminologyCategoryColorNode(vtkMRMLColorNode* colorNode)
+{
+  if (!colorNode)
+  {
+    return false;
+  }
+  if (colorNode->GetContainsTerminology())
+  {
+    return true;
+  }
+  vtkMRMLColorTableNode* colorTableNode = vtkMRMLColorTableNode::SafeDownCast(colorNode);
+  return colorTableNode && colorTableNode->GetType() == vtkMRMLColorNode::User && colorTableNode->GetNumberOfColors() == 0;
+}
+} // namespace
 
 //------------------------------------------------------------------------------
 class qMRMLMarkupsDisplayNodeWidgetPrivate
@@ -57,8 +83,10 @@ protected:
 public:
   qMRMLMarkupsDisplayNodeWidgetPrivate(qMRMLMarkupsDisplayNodeWidget& object);
   void init();
+  void updateScalarMeasurementComboBox();
 
   vtkWeakPointer<vtkMRMLMarkupsDisplayNode> MarkupsDisplayNode;
+  vtkWeakPointer<vtkMRMLMarkupsNode> MarkupsNode;
 };
 
 //------------------------------------------------------------------------------
@@ -178,6 +206,12 @@ void qMRMLMarkupsDisplayNodeWidgetPrivate::init()
              q,
              SIGNAL(scalarRangeModeValueChanged(vtkMRMLDisplayNode::ScalarRangeFlagType)));
   q->connect(this->ScalarsDisplayWidget, SIGNAL(displayNodeChanged()), q, SIGNAL(displayNodeChanged()));
+  this->ScalarsDisplayWidget->setScalarsVisibilityControlsVisible(false);
+  this->ScalarsDisplayWidget->setActiveScalarControlsVisible(false);
+  QObject::connect(this->LineScalarVisibilityCheckBox, SIGNAL(toggled(bool)), q, SLOT(setLineScalarVisibility(bool)));
+  QObject::connect(this->ControlPointScalarVisibilityCheckBox, SIGNAL(toggled(bool)), q, SLOT(setControlPointScalarVisibility(bool)));
+  QObject::connect(this->ControlPointScalarComboBox, SIGNAL(activated(int)), q, SLOT(onControlPointScalarActivated(int)));
+  QObject::connect(this->ScalarsDisplayWidget, SIGNAL(scalarsColorNodeChanged(vtkMRMLColorNode*)), q, SLOT(onScalarsColorNodeChanged(vtkMRMLColorNode*)));
 
   // Disable until a valid display node is set
   this->setEnabled(false);
@@ -235,6 +269,12 @@ void qMRMLMarkupsDisplayNodeWidget::setMRMLMarkupsDisplayNode(vtkMRMLMarkupsDisp
   qvtkReconnect(d->MarkupsDisplayNode, markupsDisplayNode, vtkCommand::ModifiedEvent, this, SLOT(updateWidgetFromMRML()));
   d->MarkupsDisplayNode = markupsDisplayNode;
 
+  vtkMRMLMarkupsNode* markupsNode = markupsDisplayNode ? vtkMRMLMarkupsNode::SafeDownCast(markupsDisplayNode->GetDisplayableNode()) : nullptr;
+  qvtkReconnect(d->MarkupsNode, markupsNode, vtkMRMLMarkupsNode::MeasurementsModifiedEvent, this, SLOT(updateWidgetFromMRML()));
+  qvtkReconnect(d->MarkupsNode, markupsNode, vtkMRMLMarkupsNode::PointAddedEvent, this, SLOT(updateWidgetFromMRML()));
+  qvtkReconnect(d->MarkupsNode, markupsNode, vtkMRMLMarkupsNode::PointRemovedEvent, this, SLOT(updateWidgetFromMRML()));
+  d->MarkupsNode = markupsNode;
+
   // Set display node to scalars display widget
   d->ScalarsDisplayWidget->setMRMLDisplayNode(markupsDisplayNode);
 
@@ -251,6 +291,16 @@ void qMRMLMarkupsDisplayNodeWidget::updateWidgetFromMRML()
   d->DisplayNodeViewComboBox->setMRMLDisplayNode(d->MarkupsDisplayNode);
   d->pointFiducialProjectionWidget->setMRMLMarkupsDisplayNode(d->MarkupsDisplayNode);
   d->VisibilityCheckBox->setChecked(d->MarkupsDisplayNode ? d->MarkupsDisplayNode->GetVisibility() : false);
+
+  vtkMRMLMarkupsNode* observedMarkupsNode =
+    d->MarkupsDisplayNode ? vtkMRMLMarkupsNode::SafeDownCast(d->MarkupsDisplayNode->GetDisplayableNode()) : nullptr;
+  if (observedMarkupsNode != d->MarkupsNode)
+  {
+    qvtkReconnect(d->MarkupsNode, observedMarkupsNode, vtkMRMLMarkupsNode::MeasurementsModifiedEvent, this, SLOT(updateWidgetFromMRML()));
+    qvtkReconnect(d->MarkupsNode, observedMarkupsNode, vtkMRMLMarkupsNode::PointAddedEvent, this, SLOT(updateWidgetFromMRML()));
+    qvtkReconnect(d->MarkupsNode, observedMarkupsNode, vtkMRMLMarkupsNode::PointRemovedEvent, this, SLOT(updateWidgetFromMRML()));
+    d->MarkupsNode = observedMarkupsNode;
+  }
 
   // update the display properties from the markups display node
   vtkSmartPointer<vtkMRMLMarkupsDisplayNode> markupsDisplayNode = d->MarkupsDisplayNode.GetPointer();
@@ -432,9 +482,221 @@ void qMRMLMarkupsDisplayNodeWidget::updateWidgetFromMRML()
   d->LineSliceIntersectionPointVisibilityCheckBox->blockSignals(wasBlocking);
 
   // Scalars
+  wasBlocking = d->LineScalarVisibilityCheckBox->blockSignals(true);
+  d->LineScalarVisibilityCheckBox->setChecked(markupsDisplayNode->GetScalarVisibility());
+  d->LineScalarVisibilityCheckBox->blockSignals(wasBlocking);
+
+  wasBlocking = d->ControlPointScalarVisibilityCheckBox->blockSignals(true);
+  d->ControlPointScalarVisibilityCheckBox->setChecked(markupsDisplayNode->GetControlPointScalarVisibility());
+  d->ControlPointScalarVisibilityCheckBox->blockSignals(wasBlocking);
+
+  d->updateScalarMeasurementComboBox();
+  vtkMRMLMeasurement* activeMeasurement = d->MarkupsDisplayNode ? d->MarkupsDisplayNode->GetActiveControlPointMeasurement() : nullptr;
+  vtkDoubleArray* activeValues = activeMeasurement ? activeMeasurement->GetControlPointValues() : nullptr;
+  const int numberOfComponents = activeValues ? activeValues->GetNumberOfComponents() : 0;
+  const bool supportedControlPointValues =
+    activeValues && d->MarkupsNode && activeValues->GetNumberOfTuples() == d->MarkupsNode->GetNumberOfControlPoints() &&
+    (numberOfComponents == 1 || numberOfComponents == 3 || numberOfComponents == 4);
+  const char* activeScalarName = markupsDisplayNode->GetActiveScalarName();
+  vtkDataSet* scalarDataSet = markupsDisplayNode->GetScalarDataSet();
+  vtkDataArray* activeCurveValues = scalarDataSet && activeScalarName && activeScalarName[0] != '\0'
+    ? scalarDataSet->GetPointData()->GetArray(activeScalarName)
+    : nullptr;
+  const bool supportedLineValues = activeCurveValues && (activeCurveValues->GetNumberOfComponents() == 1 || activeCurveValues->GetNumberOfComponents() == 3
+                                                         || activeCurveValues->GetNumberOfComponents() == 4);
+  d->LineScalarVisibilityCheckBox->setEnabled(lineSizeEnabled && (supportedLineValues || markupsDisplayNode->GetScalarVisibility()));
+  // Keep an enabled visibility setting switchable off even if its source has
+  // subsequently become unavailable or malformed.
+  d->ControlPointScalarVisibilityCheckBox->setEnabled(supportedControlPointValues || markupsDisplayNode->GetControlPointScalarVisibility());
+  d->ControlPointScalarComboBox->setEnabled(d->ControlPointScalarComboBox->count() > 1);
+  d->ControlPointScalarLabel->setEnabled(d->ControlPointScalarComboBox->count() > 1);
   d->ScalarsDisplayWidget->updateWidgetFromMRML();
 
   emit displayNodeChanged();
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidgetPrivate::updateScalarMeasurementComboBox()
+{
+  const bool wasBlocking = this->ControlPointScalarComboBox->blockSignals(true);
+  this->ControlPointScalarComboBox->clear();
+  this->ControlPointScalarComboBox->addItem(qMRMLMarkupsDisplayNodeWidget::tr("None"), QString());
+
+  QSet<QString> scalarNames;
+
+  if (this->MarkupsNode)
+  {
+    for (int measurementIndex = 0; measurementIndex < this->MarkupsNode->GetNumberOfMeasurements(); ++measurementIndex)
+    {
+      vtkMRMLMeasurement* measurement = this->MarkupsNode->GetNthMeasurement(measurementIndex);
+      vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+      if (!values || measurement->GetName().empty())
+      {
+        continue;
+      }
+      const int numberOfComponents = values->GetNumberOfComponents();
+      if (numberOfComponents != 1 && numberOfComponents != 3 && numberOfComponents != 4)
+      {
+        continue;
+      }
+      const QString measurementName = QString::fromStdString(measurement->GetName());
+      QString text = measurementName;
+      if (numberOfComponents == 3)
+      {
+        text += qMRMLMarkupsDisplayNodeWidget::tr(" (RGB)");
+      }
+      else if (numberOfComponents == 4)
+      {
+        text += qMRMLMarkupsDisplayNodeWidget::tr(" (RGBA)");
+      }
+      if (values->GetNumberOfTuples() != this->MarkupsNode->GetNumberOfControlPoints())
+      {
+        text += qMRMLMarkupsDisplayNodeWidget::tr(" (%1 of %2 points)").arg(values->GetNumberOfTuples()).arg(this->MarkupsNode->GetNumberOfControlPoints());
+      }
+      this->ControlPointScalarComboBox->addItem(text, measurementName);
+      scalarNames.insert(measurementName);
+    }
+  }
+
+  // Keep curve-only data arrays available for line coloring. These sources
+  // cannot color control-point glyphs unless a measurement of the same name
+  // provides aligned control-point values.
+  vtkDataSet* scalarDataSet = this->MarkupsDisplayNode ? this->MarkupsDisplayNode->GetScalarDataSet() : nullptr;
+  vtkPointData* pointData = scalarDataSet ? scalarDataSet->GetPointData() : nullptr;
+  if (pointData)
+  {
+    for (int arrayIndex = 0; arrayIndex < pointData->GetNumberOfArrays(); ++arrayIndex)
+    {
+      vtkDataArray* array = pointData->GetArray(arrayIndex);
+      if (!array || !array->GetName())
+      {
+        continue;
+      }
+      const int numberOfComponents = array->GetNumberOfComponents();
+      if (numberOfComponents != 1 && numberOfComponents != 3 && numberOfComponents != 4)
+      {
+        continue;
+      }
+      const QString arrayName = QString::fromUtf8(array->GetName());
+      if (arrayName.isEmpty() || scalarNames.contains(arrayName))
+      {
+        continue;
+      }
+      QString text = qMRMLMarkupsDisplayNodeWidget::tr("%1 (3D line/curve)").arg(arrayName);
+      if (numberOfComponents > 1)
+      {
+        text += qMRMLMarkupsDisplayNodeWidget::tr(" (%1 components)").arg(numberOfComponents);
+      }
+      this->ControlPointScalarComboBox->addItem(text, arrayName);
+      scalarNames.insert(arrayName);
+    }
+  }
+
+  const QString activeScalarName =
+    this->MarkupsDisplayNode && this->MarkupsDisplayNode->GetActiveScalarName() ? QString::fromUtf8(this->MarkupsDisplayNode->GetActiveScalarName()) : QString();
+  int activeIndex = this->ControlPointScalarComboBox->findData(activeScalarName);
+  if (activeIndex < 0 && !activeScalarName.isEmpty())
+  {
+    this->ControlPointScalarComboBox->addItem(qMRMLMarkupsDisplayNodeWidget::tr("%1 (unavailable)").arg(activeScalarName), activeScalarName);
+    activeIndex = this->ControlPointScalarComboBox->count() - 1;
+  }
+  this->ControlPointScalarComboBox->setCurrentIndex(std::max(0, activeIndex));
+  this->ControlPointScalarComboBox->blockSignals(wasBlocking);
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::setLineScalarVisibility(bool visible)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (d->MarkupsDisplayNode)
+  {
+    d->MarkupsDisplayNode->SetScalarVisibility(visible);
+    d->MarkupsDisplayNode->UpdateAssignedAttribute();
+  }
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::setControlPointScalarVisibility(bool visible)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (d->MarkupsDisplayNode)
+  {
+    d->MarkupsDisplayNode->SetControlPointScalarVisibility(visible);
+  }
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::onControlPointScalarActivated(int index)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (!d->MarkupsDisplayNode || index < 0)
+  {
+    return;
+  }
+
+  const QString measurementName = d->ControlPointScalarComboBox->itemData(index).toString();
+  vtkMRMLMeasurement* measurement = d->MarkupsNode ? d->MarkupsNode->GetMeasurement(measurementName.toUtf8().constData()) : nullptr;
+  vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+  const bool supportedControlPointValues =
+    values && d->MarkupsNode && values->GetNumberOfTuples() == d->MarkupsNode->GetNumberOfControlPoints()
+    && (values->GetNumberOfComponents() == 1 || values->GetNumberOfComponents() == 3 || values->GetNumberOfComponents() == 4);
+
+  const int wasModified = d->MarkupsDisplayNode->StartModify();
+  d->MarkupsDisplayNode->SetActiveScalar(measurementName.isEmpty() ? nullptr : measurementName.toUtf8().constData(), vtkAssignAttribute::POINT_DATA);
+  vtkDataSet* scalarDataSet = d->MarkupsDisplayNode->GetScalarDataSet();
+  vtkDataArray* curveValues = scalarDataSet && !measurementName.isEmpty()
+    ? scalarDataSet->GetPointData()->GetArray(measurementName.toUtf8().constData())
+    : nullptr;
+  const int numberOfComponents = supportedControlPointValues ? values->GetNumberOfComponents() : (curveValues ? curveValues->GetNumberOfComponents() : 0);
+  if (numberOfComponents == 3 || numberOfComponents == 4)
+  {
+    d->MarkupsDisplayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseDirectMapping);
+  }
+  else if (numberOfComponents == 1 && IsTerminologyCategoryColorNode(d->MarkupsDisplayNode->GetColorNode()))
+  {
+    d->MarkupsDisplayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseColorNodeScalarRange);
+  }
+  else if (d->MarkupsDisplayNode->GetScalarRangeFlag() == vtkMRMLDisplayNode::UseDirectMapping)
+  {
+    d->MarkupsDisplayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseDataScalarRange);
+  }
+  if (numberOfComponents > 0 && numberOfComponents != 3 && numberOfComponents != 4 && !d->MarkupsDisplayNode->GetColorNodeID())
+  {
+    d->MarkupsDisplayNode->SetAndObserveColorNodeID("vtkMRMLColorTableNodeFileViridis.txt");
+  }
+  if (!supportedControlPointValues)
+  {
+    d->MarkupsDisplayNode->SetControlPointScalarVisibility(false);
+  }
+  if (measurementName.isEmpty())
+  {
+    d->MarkupsDisplayNode->SetScalarVisibility(false);
+  }
+  d->MarkupsDisplayNode->UpdateScalarRange();
+  d->MarkupsDisplayNode->EndModify(wasModified);
+}
+
+//------------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::onScalarsColorNodeChanged(vtkMRMLColorNode* colorNode)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (!d->MarkupsDisplayNode || !IsTerminologyCategoryColorNode(colorNode))
+  {
+    return;
+  }
+
+  vtkDoubleArray* controlPointScalars = d->MarkupsDisplayNode->GetActiveControlPointScalarArray();
+  const bool controlPointScalarsAligned = controlPointScalars && d->MarkupsNode
+    && controlPointScalars->GetNumberOfTuples() == d->MarkupsNode->GetNumberOfControlPoints();
+  vtkDataArray* activeScalars = controlPointScalarsAligned ? controlPointScalars : d->MarkupsDisplayNode->GetActiveScalarArray();
+  if (!activeScalars)
+  {
+    return;
+  }
+  if (activeScalars->GetNumberOfComponents() == 1)
+  {
+    d->MarkupsDisplayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseColorNodeScalarRange);
+  }
 }
 
 //------------------------------------------------------------------------------

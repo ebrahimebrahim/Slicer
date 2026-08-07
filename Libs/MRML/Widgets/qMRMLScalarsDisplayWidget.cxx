@@ -120,6 +120,22 @@ qMRMLScalarsDisplayWidget::qMRMLScalarsDisplayWidget(QWidget* parentWidget)
 qMRMLScalarsDisplayWidget::~qMRMLScalarsDisplayWidget() = default;
 
 //------------------------------------------------------------------------------
+void qMRMLScalarsDisplayWidget::setScalarsVisibilityControlsVisible(bool visible)
+{
+  Q_D(qMRMLScalarsDisplayWidget);
+  d->ScalarsVisibilityLabel->setVisible(visible);
+  d->ScalarsVisibilityCheckBox->setVisible(visible);
+}
+
+//------------------------------------------------------------------------------
+void qMRMLScalarsDisplayWidget::setActiveScalarControlsVisible(bool visible)
+{
+  Q_D(qMRMLScalarsDisplayWidget);
+  d->ActiveScalarLabel->setVisible(visible);
+  d->ActiveScalarComboBox->setVisible(visible);
+}
+
+//------------------------------------------------------------------------------
 vtkMRMLDisplayNode* qMRMLScalarsDisplayWidget::mrmlDisplayNode() const
 {
   Q_D(const qMRMLScalarsDisplayWidget);
@@ -296,8 +312,10 @@ void qMRMLScalarsDisplayWidget::setScalarsColorNode(vtkMRMLColorNode* colorNode)
     if (displayNode)
     {
       displayNode->SetAndObserveColorNodeID(colorNode ? colorNode->GetID() : nullptr);
+      displayNode->UpdateScalarRange();
     }
   }
+  emit scalarsColorNodeChanged(colorNode);
 }
 
 //------------------------------------------------------------------------------

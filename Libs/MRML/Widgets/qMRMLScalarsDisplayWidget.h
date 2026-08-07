@@ -65,9 +65,19 @@ public:
   /// Get maximum of the scalar display range
   double maximumValue() const;
 
+  /// Show or hide the generic scalar-visibility row. Specialized widgets may
+  /// provide separate visibility controls while reusing the color and range UI.
+  void setScalarsVisibilityControlsVisible(bool visible);
+
+  /// Show or hide the generic dataset-array selector row. Specialized widgets
+  /// may select scalar sources that are not stored in a vtkDataSet.
+  void setActiveScalarControlsVisible(bool visible);
+
 signals:
   /// Signal sent if the auto/manual value is updated
   void scalarRangeModeValueChanged(vtkMRMLDisplayNode::ScalarRangeFlagType mode);
+  /// Signal sent when the color node is changed through this widget.
+  void scalarsColorNodeChanged(vtkMRMLColorNode* colorNode);
   /// Signal sent if the any property in the display node is changed
   void displayNodeChanged();
 

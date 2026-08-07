@@ -99,6 +99,12 @@ public slots:
   void setLineDirectionMarkerReversed(bool reversed);
   void setLineSliceIntersectionPointVisibility(bool visible);
 
+  /// Set scalar coloring independently for line/curve geometry and control-point glyphs.
+  void setLineScalarVisibility(bool visible);
+  void setControlPointScalarVisibility(bool visible);
+  void onControlPointScalarActivated(int index);
+  void onScalarsColorNodeChanged(vtkMRMLColorNode* colorNode);
+
 protected slots:
   void updateWidgetFromMRML();
   vtkMRMLSelectionNode* getSelectionNode(vtkMRMLScene* mrmlScene);

@@ -775,6 +775,51 @@
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
+       <layout class="QGridLayout" name="scalarSourceGridLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="ScalarVisibilityLabel">
+          <property name="text">
+           <string>Visibility:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QCheckBox" name="LineScalarVisibilityCheckBox">
+          <property name="toolTip">
+           <string>Color the 3D line or curve using the selected scalar source</string>
+          </property>
+          <property name="text">
+           <string>Line/curve (3D)</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="2">
+         <widget class="QCheckBox" name="ControlPointScalarVisibilityCheckBox">
+          <property name="toolTip">
+           <string>Color control point glyphs using the selected measurement</string>
+          </property>
+          <property name="text">
+           <string>Control points</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="ControlPointScalarLabel">
+          <property name="text">
+           <string>Scalar source:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1" colspan="2">
+         <widget class="QComboBox" name="ControlPointScalarComboBox">
+          <property name="toolTip">
+           <string>Select a measurement for control-point coloring or a curve array for 3D line coloring</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
        <widget class="qMRMLScalarsDisplayWidget" name="ScalarsDisplayWidget"/>
       </item>
      </layout>
