@@ -33,6 +33,7 @@
 #include "vtkMRMLMarkupsPlaneNode.h"
 #include "vtkMRMLMarkupsROIJsonStorageNode.h"
 #include "vtkMRMLMarkupsROINode.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkMRMLTableStorageNode.h"
 
 // Markups VTK widgets includes
@@ -74,13 +75,18 @@
 
 // VTK includes
 #include <vtkBitArray.h>
+#include <vtkDoubleArray.h>
 #include <vtkFloatArray.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkTable.h>
+#include <vtkWeakPointer.h>
 
 // STD includes
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <limits>
 
 //----------------------------------------------------------------------------
 class vtkSlicerMarkupsLogic::vtkInternal
@@ -1239,6 +1245,110 @@ void vtkSlicerMarkupsLogic::SetDisplayDefaultsFromNode(vtkMRMLMarkupsDisplayNode
   this->CopyBasicDisplayProperties(displayNode, defaultNode);
 }
 
+namespace
+{
+struct ControlPointCategoryTransfer
+{
+  vtkWeakPointer<vtkMRMLStaticMeasurement> TargetMeasurement;
+  vtkWeakPointer<vtkMRMLColorNode> ColorNode;
+  std::string MeasurementName;
+  double Value{ std::numeric_limits<double>::quiet_NaN() };
+};
+
+// Category values can only be transferred when their numeric values have the
+// same meaning in both nodes.
+bool GetCompatibleControlPointCategory(vtkMRMLMarkupsNode* sourceNode,
+                                       int sourceControlPointIndex,
+                                       vtkMRMLMarkupsNode* targetNode,
+                                       ControlPointCategoryTransfer& transfer)
+{
+  transfer = ControlPointCategoryTransfer();
+
+  vtkMRMLMarkupsDisplayNode* sourceDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(sourceNode ? sourceNode->GetDisplayNode() : nullptr);
+  vtkMRMLMarkupsDisplayNode* targetDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(targetNode ? targetNode->GetDisplayNode() : nullptr);
+  if (!sourceDisplayNode || !targetDisplayNode)
+  {
+    return false;
+  }
+
+  const char* sourceMeasurementName = sourceDisplayNode->GetActiveScalarName();
+  const char* targetMeasurementName = targetDisplayNode->GetActiveScalarName();
+  if (!sourceMeasurementName || sourceMeasurementName[0] == '\0' || !targetMeasurementName || std::string(sourceMeasurementName) != targetMeasurementName
+      || sourceDisplayNode->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseColorNodeScalarRange
+      || targetDisplayNode->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseColorNodeScalarRange)
+  {
+    return false;
+  }
+
+  vtkMRMLColorNode* colorNode = sourceDisplayNode->GetColorNode();
+  if (!colorNode || colorNode != targetDisplayNode->GetColorNode() || !colorNode->GetContainsTerminology())
+  {
+    return false;
+  }
+
+  vtkMRMLStaticMeasurement* sourceMeasurement = vtkMRMLStaticMeasurement::SafeDownCast(sourceNode->GetMeasurement(sourceMeasurementName));
+  vtkMRMLStaticMeasurement* targetMeasurement = vtkMRMLStaticMeasurement::SafeDownCast(targetNode->GetMeasurement(targetMeasurementName));
+  vtkDoubleArray* sourceValues = sourceMeasurement ? sourceMeasurement->GetControlPointValues() : nullptr;
+  vtkDoubleArray* targetValues = targetMeasurement ? targetMeasurement->GetControlPointValues() : nullptr;
+  if (!sourceValues || !targetValues || sourceValues->GetNumberOfComponents() != 1 || targetValues->GetNumberOfComponents() != 1
+      || sourceValues->GetNumberOfTuples() != sourceNode->GetNumberOfControlPoints()
+      || targetValues->GetNumberOfTuples() != targetNode->GetNumberOfControlPoints())
+  {
+    return false;
+  }
+
+  const double categoryValue = sourceValues->GetValue(sourceControlPointIndex);
+  if (!std::isfinite(categoryValue) || std::trunc(categoryValue) != categoryValue || categoryValue < 0.0
+      || categoryValue > static_cast<double>(std::numeric_limits<int>::max()))
+  {
+    return false;
+  }
+
+  const int categoryIndex = static_cast<int>(categoryValue);
+  if (!colorNode->GetColorDefined(categoryIndex) || colorNode->GetTerminologyAsString(categoryIndex).empty())
+  {
+    return false;
+  }
+
+  transfer.TargetMeasurement = targetMeasurement;
+  transfer.ColorNode = colorNode;
+  transfer.MeasurementName = targetMeasurementName;
+  transfer.Value = categoryValue;
+  return true;
+}
+
+void SetTransferredControlPointCategory(const ControlPointCategoryTransfer& transfer, vtkMRMLMarkupsNode* targetNode, int targetControlPointIndex)
+{
+  vtkMRMLStaticMeasurement* targetMeasurement = transfer.TargetMeasurement;
+  vtkMRMLColorNode* colorNode = transfer.ColorNode;
+  vtkMRMLMarkupsDisplayNode* targetDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(targetNode ? targetNode->GetDisplayNode() : nullptr);
+  const char* activeScalarName = targetDisplayNode ? targetDisplayNode->GetActiveScalarName() : nullptr;
+  if (!targetMeasurement || !colorNode || !targetDisplayNode || !activeScalarName || transfer.MeasurementName != activeScalarName
+      || targetNode->GetMeasurement(transfer.MeasurementName.c_str()) != targetMeasurement
+      || targetDisplayNode->GetScalarRangeFlag() != vtkMRMLDisplayNode::UseColorNodeScalarRange || targetDisplayNode->GetColorNode() != colorNode)
+  {
+    return;
+  }
+
+  const int categoryIndex = static_cast<int>(transfer.Value);
+  if (!colorNode->GetContainsTerminology() || !colorNode->GetColorDefined(categoryIndex) || colorNode->GetTerminologyAsString(categoryIndex).empty())
+  {
+    return;
+  }
+
+  vtkDoubleArray* targetValues = targetMeasurement ? targetMeasurement->GetControlPointValues() : nullptr;
+  if (!targetValues || !targetNode || targetValues->GetNumberOfComponents() != 1
+      || targetValues->GetNumberOfTuples() != targetNode->GetNumberOfControlPoints() || targetControlPointIndex < 0
+      || targetControlPointIndex >= targetValues->GetNumberOfTuples())
+  {
+    return;
+  }
+
+  targetValues->SetValue(targetControlPointIndex, transfer.Value);
+  targetValues->Modified();
+}
+} // namespace
+
 //---------------------------------------------------------------------------
 bool vtkSlicerMarkupsLogic::MoveNthControlPointToNewListAtIndex(int n, vtkMRMLMarkupsNode* markupsNode, vtkMRMLMarkupsNode* newMarkupsNode, int newIndex)
 {
@@ -1254,16 +1364,25 @@ bool vtkSlicerMarkupsLogic::MoveNthControlPointToNewListAtIndex(int n, vtkMRMLMa
     return false;
   }
 
+  ControlPointCategoryTransfer categoryTransfer;
+  const bool transferCategory = GetCompatibleControlPointCategory(markupsNode, n, newMarkupsNode, categoryTransfer);
+
   // get the control point
   vtkMRMLMarkupsNode::ControlPoint* newControlPoint = new vtkMRMLMarkupsNode::ControlPoint;
   *newControlPoint = *markupsNode->GetNthControlPoint(n);
 
   // add it to the destination list
+  const int targetControlPointIndex = std::max(0, std::min(newIndex, newMarkupsNode->GetNumberOfControlPoints()));
   bool insertVal = newMarkupsNode->InsertControlPoint(newControlPoint, newIndex);
   if (!insertVal)
   {
+    delete newControlPoint;
     vtkErrorMacro("MoveNthControlPointToNewListAtIndex: failed to insert new control point at " << newIndex << ", control point is still on source list.");
     return false;
+  }
+  if (transferCategory)
+  {
+    SetTransferredControlPointCategory(categoryTransfer, newMarkupsNode, targetControlPointIndex);
   }
 
   // remove it from the source list
@@ -1287,12 +1406,25 @@ bool vtkSlicerMarkupsLogic::CopyNthControlPointToNewList(int n, vtkMRMLMarkupsNo
     return false;
   }
 
+  ControlPointCategoryTransfer categoryTransfer;
+  const bool transferCategory = GetCompatibleControlPointCategory(markupsNode, n, newMarkupsNode, categoryTransfer);
+
   // get the control point
   vtkMRMLMarkupsNode::ControlPoint* newControlPoint = new vtkMRMLMarkupsNode::ControlPoint;
   *newControlPoint = *markupsNode->GetNthControlPoint(n);
 
   // add it to the destination list
-  newMarkupsNode->AddControlPoint(newControlPoint, false);
+  const int targetControlPointIndex = newMarkupsNode->AddControlPoint(newControlPoint, false);
+  if (targetControlPointIndex < 0)
+  {
+    delete newControlPoint;
+    vtkErrorMacro("CopyNthControlPointToNewList: failed to add control point to destination list");
+    return false;
+  }
+  if (transferCategory)
+  {
+    SetTransferredControlPointCategory(categoryTransfer, newMarkupsNode, targetControlPointIndex);
+  }
 
   return true;
 }

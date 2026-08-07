@@ -17,16 +17,52 @@
 
 // MRML includes
 #include "vtkMRMLCoreTestingMacros.h"
+#include "vtkMRMLColorTableNode.h"
 #include "vtkMRMLMarkupsCurveNode.h"
+#include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsFiducialNode.h"
+#include "vtkMRMLScene.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkSlicerMarkupsLogic.h"
 
 // VTK includes
+#include <vtkCallbackCommand.h>
+#include <vtkDoubleArray.h>
 #include <vtkNew.h>
 #include <vtkTestingOutputWindow.h>
 
 // STD includes
+#include <cmath>
 #include <iostream>
+
+namespace
+{
+struct RemoveMeasurementOnPointAddedData
+{
+  vtkMRMLStaticMeasurement* Measurement{ nullptr };
+  bool Invoked{ false };
+};
+
+void RemoveMeasurementOnPointAdded(vtkObject* caller, unsigned long, void* clientData, void*)
+{
+  vtkMRMLMarkupsNode* markupsNode = vtkMRMLMarkupsNode::SafeDownCast(caller);
+  RemoveMeasurementOnPointAddedData* data = static_cast<RemoveMeasurementOnPointAddedData*>(clientData);
+  if (!markupsNode || !data || data->Invoked)
+  {
+    return;
+  }
+
+  data->Invoked = true;
+  for (int measurementIndex = 0; measurementIndex < markupsNode->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    if (markupsNode->GetNthMeasurement(measurementIndex) == data->Measurement)
+    {
+      markupsNode->RemoveNthMeasurement(measurementIndex);
+      return;
+    }
+  }
+}
+} // namespace
 
 static void PrintLabels(vtkMRMLMarkupsNode* m)
 {
@@ -284,6 +320,103 @@ int vtkSlicerMarkupsLogicTest2(int argc, char* argv[])
     std::cerr << "Failed to copy 0th markup to new list, destination list expected size was " << destSize << " but is now " << dest->GetNumberOfControlPoints() << std::endl;
     return EXIT_FAILURE;
   }
+
+  // A discrete category is part of the active scalar measurement rather than
+  // the control point itself. Preserve it only when the destination has the
+  // exact same measurement and color-table interpretation.
+  vtkNew<vtkMRMLScene> categoryScene;
+  vtkNew<vtkMRMLColorTableNode> categoryColorNode;
+  categoryColorNode->SetTypeToUser();
+  categoryColorNode->SetNumberOfColors(3);
+  categoryColorNode->SetColor(0, "unset", 0.2, 0.2, 0.2, 1.0);
+  categoryColorNode->SetColor(1, "first category", 1.0, 0.0, 0.0, 1.0);
+  categoryColorNode->SetColor(2, "second category", 0.0, 1.0, 0.0, 1.0);
+  CHECK_BOOL(categoryColorNode->SetTerminologyFromString(1, "~SCT^123037004^Body structure~SCT^111^First~^^~~^^~^^"), true);
+  CHECK_BOOL(categoryColorNode->SetTerminologyFromString(2, "~SCT^123037004^Body structure~SCT^222^Second~^^~~^^~^^"), true);
+  categoryScene->AddNode(categoryColorNode);
+
+  vtkNew<vtkMRMLMarkupsFiducialNode> categorySource;
+  vtkNew<vtkMRMLMarkupsFiducialNode> categoryDestination;
+  categoryScene->AddNode(categorySource);
+  categoryScene->AddNode(categoryDestination);
+  categorySource->AddNControlPoints(2);
+  categoryDestination->AddNControlPoints(1);
+
+  vtkNew<vtkMRMLMarkupsDisplayNode> categorySourceDisplay;
+  vtkNew<vtkMRMLMarkupsDisplayNode> categoryDestinationDisplay;
+  categoryScene->AddNode(categorySourceDisplay);
+  categoryScene->AddNode(categoryDestinationDisplay);
+  categorySource->AddAndObserveDisplayNodeID(categorySourceDisplay->GetID());
+  categoryDestination->AddAndObserveDisplayNodeID(categoryDestinationDisplay->GetID());
+  for (vtkMRMLMarkupsDisplayNode* displayNode : { categorySourceDisplay.GetPointer(), categoryDestinationDisplay.GetPointer() })
+  {
+    displayNode->SetActiveScalarName("category");
+    displayNode->SetAndObserveColorNodeID(categoryColorNode->GetID());
+    displayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseColorNodeScalarRange);
+  }
+
+  vtkNew<vtkDoubleArray> categorySourceValues;
+  categorySourceValues->InsertNextValue(2.0);
+  categorySourceValues->InsertNextValue(1.0);
+  vtkNew<vtkMRMLStaticMeasurement> categorySourceMeasurement;
+  categorySourceMeasurement->SetName("category");
+  categorySourceMeasurement->SetControlPointValues(categorySourceValues);
+  categorySource->AddMeasurement(categorySourceMeasurement);
+
+  vtkNew<vtkDoubleArray> categoryDestinationValues;
+  categoryDestinationValues->InsertNextValue(0.0);
+  vtkNew<vtkMRMLStaticMeasurement> categoryDestinationMeasurement;
+  categoryDestinationMeasurement->SetName("category");
+  categoryDestinationMeasurement->SetControlPointValues(categoryDestinationValues);
+  categoryDestination->AddMeasurement(categoryDestinationMeasurement);
+
+  CHECK_BOOL(logic1->CopyNthControlPointToNewList(0, categorySource, categoryDestination), true);
+  CHECK_INT(categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples(), 2);
+  CHECK_DOUBLE(categoryDestinationMeasurement->GetControlPointValues()->GetValue(1), 2.0);
+
+  CHECK_BOOL(logic1->MoveNthControlPointToNewListAtIndex(1, categorySource, categoryDestination, 1), true);
+  CHECK_INT(categorySourceMeasurement->GetControlPointValues()->GetNumberOfTuples(), 1);
+  CHECK_DOUBLE(categorySourceMeasurement->GetControlPointValues()->GetValue(0), 2.0);
+  CHECK_INT(categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples(), 3);
+  CHECK_DOUBLE(categoryDestinationMeasurement->GetControlPointValues()->GetValue(0), 0.0);
+  CHECK_DOUBLE(categoryDestinationMeasurement->GetControlPointValues()->GetValue(1), 1.0);
+  CHECK_DOUBLE(categoryDestinationMeasurement->GetControlPointValues()->GetValue(2), 2.0);
+
+  vtkNew<vtkMRMLColorTableNode> otherColorNode;
+  otherColorNode->SetTypeToUser();
+  otherColorNode->SetNumberOfColors(3);
+  otherColorNode->SetColor(2, "different meaning", 0.0, 0.0, 1.0, 1.0);
+  categoryScene->AddNode(otherColorNode);
+  categoryDestinationDisplay->SetAndObserveColorNodeID(otherColorNode->GetID());
+
+  CHECK_BOOL(logic1->CopyNthControlPointToNewList(0, categorySource, categoryDestination), true);
+  CHECK_INT(categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples(), 4);
+  CHECK_BOOL(std::isnan(categoryDestinationMeasurement->GetControlPointValues()->GetValue(3)), true);
+
+  categorySourceDisplay->SetAndObserveColorNodeID(otherColorNode->GetID());
+  CHECK_BOOL(logic1->CopyNthControlPointToNewList(0, categorySource, categoryDestination), true);
+  CHECK_INT(categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples(), 5);
+  CHECK_BOOL(std::isnan(categoryDestinationMeasurement->GetControlPointValues()->GetValue(4)), true);
+
+  // Point insertion invokes synchronous observers. If one removes the active
+  // destination measurement, then the category must not be written through
+  // the now-stale mapping retained by the transfer operation.
+  categorySourceDisplay->SetAndObserveColorNodeID(categoryColorNode->GetID());
+  categoryDestinationDisplay->SetAndObserveColorNodeID(categoryColorNode->GetID());
+  RemoveMeasurementOnPointAddedData removeMeasurementData;
+  removeMeasurementData.Measurement = categoryDestinationMeasurement;
+  vtkNew<vtkCallbackCommand> removeMeasurementCallback;
+  removeMeasurementCallback->SetClientData(&removeMeasurementData);
+  removeMeasurementCallback->SetCallback(RemoveMeasurementOnPointAdded);
+  const unsigned long removeMeasurementObserverTag =
+    categoryDestination->AddObserver(vtkMRMLMarkupsNode::PointAddedEvent, removeMeasurementCallback);
+  const vtkIdType numberOfDestinationValuesBeforeCopy = categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples();
+  CHECK_BOOL(logic1->CopyNthControlPointToNewList(0, categorySource, categoryDestination), true);
+  categoryDestination->RemoveObserver(removeMeasurementObserverTag);
+  CHECK_BOOL(removeMeasurementData.Invoked, true);
+  CHECK_NULL(categoryDestination->GetMeasurement("category"));
+  CHECK_INT(categoryDestinationMeasurement->GetControlPointValues()->GetNumberOfTuples(), numberOfDestinationValuesBeforeCopy + 1);
+  CHECK_BOOL(std::isnan(categoryDestinationMeasurement->GetControlPointValues()->GetValue(numberOfDestinationValuesBeforeCopy)), true);
   // cleanup
 
   // Test CSV export/import
