@@ -16,6 +16,7 @@
 ==============================================================================*/
 
 #include <vtkCodedEntry.h>
+#include "vtkMRMLColorNode.h"
 #include "vtkMRMLJsonElement.h"
 #include "vtkMRMLMarkupsJsonStorageNode.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
@@ -45,7 +46,7 @@ namespace
 // "main" in the name in the future, but for compatibility with Slicer < 5.1 the current value is preserved for now.
 // After sufficient time has passed and we are no longer concerned about forward compatibility with
 // Slicer < 5.1, the branch name may be changed to "main".
-const std::string MARKUPS_SCHEMA = "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.3.json#";
+const std::string MARKUPS_SCHEMA = "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.4.json#";
 // regex should be lower case
 const std::string ACCEPTED_MARKUPS_SCHEMA_REGEX = ".*markups-schema-v1\\.[0-9]+\\.[0-9]+\\.json#*$";
 } // namespace
@@ -504,6 +505,43 @@ bool vtkMRMLMarkupsJsonStorageNode::UpdateMarkupsDisplayNodeFromJsonValue(vtkMRM
   {
     displayNode->SetOpacity(displayItem->GetDoubleProperty("opacity"));
   }
+  if (displayItem->HasMember("scalarVisibility"))
+  {
+    displayNode->SetScalarVisibility(displayItem->GetBoolProperty("scalarVisibility"));
+  }
+  if (displayItem->HasMember("controlPointScalarVisibility"))
+  {
+    displayNode->SetControlPointScalarVisibility(displayItem->GetBoolProperty("controlPointScalarVisibility"));
+  }
+  if (displayItem->HasMember("activeScalarName") || displayItem->HasMember("activeAttributeLocation"))
+  {
+    std::string activeScalarName;
+    displayItem->GetStringProperty("activeScalarName", activeScalarName);
+    int activeAttributeLocation = displayNode->GetActiveAttributeLocation();
+    if (displayItem->HasMember("activeAttributeLocation"))
+    {
+      const int storedAttributeLocation = vtkMRMLDisplayNode::GetAttributeLocationFromString(displayItem->GetStringProperty("activeAttributeLocation").c_str());
+      if (storedAttributeLocation >= 0)
+      {
+        activeAttributeLocation = storedAttributeLocation;
+      }
+    }
+    displayNode->SetActiveScalar(activeScalarName.empty() ? nullptr : activeScalarName.c_str(), activeAttributeLocation);
+  }
+  if (displayItem->HasMember("scalarRangeFlag"))
+  {
+    displayNode->SetScalarRangeFlagFromString(displayItem->GetStringProperty("scalarRangeFlag").c_str());
+  }
+  double scalarRange[2] = { 0.0, 1.0 };
+  if (displayItem->GetVectorProperty("scalarRange", scalarRange, 2))
+  {
+    displayNode->SetScalarRange(scalarRange);
+  }
+  if (displayItem->HasMember("colorNodeID"))
+  {
+    const std::string colorNodeID = displayItem->GetStringProperty("colorNodeID");
+    displayNode->SetAndObserveColorNodeID(colorNodeID.empty() ? nullptr : colorNodeID.c_str());
+  }
   double color[3] = { 0.5, 0.5, 0.5 };
   if (displayItem->GetVectorProperty("color", color))
   {
@@ -901,7 +939,18 @@ bool vtkMRMLMarkupsJsonStorageNode::ReadMeasurements(vtkMRMLJsonElement* measure
     vtkSmartPointer<vtkCodedEntry> methodCode = vtkSmartPointer<vtkCodedEntry>::Take(measurementItem->GetCodedEntryProperty("methodCode"));
     measurement->SetMethodCode(methodCode);
 
-    vtkSmartPointer<vtkDoubleArray> controlPointValues = vtkSmartPointer<vtkDoubleArray>::Take(measurementItem->GetDoubleArrayProperty("controlPointValues"));
+    int numberOfComponentsForEmptyArray = 1;
+    measurementItem->GetIntProperty("controlPointValuesNumberOfComponents", numberOfComponentsForEmptyArray);
+    vtkSmartPointer<vtkDoubleArray> controlPointValues =
+      vtkSmartPointer<vtkDoubleArray>::Take(measurementItem->GetNullableDoubleArrayProperty("controlPointValues", numberOfComponentsForEmptyArray));
+    if (measurementItem->HasMember("controlPointValues") && !controlPointValues)
+    {
+      vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                 this->GetUserMessages(),
+                                                 "vtkMRMLMarkupsJsonStorageNode::ReadMeasurements",
+                                                 "Failed to read control-point values for measurement '" << measurementName << "'.");
+      return false;
+    }
     if (controlPointValues.GetPointer())
     {
       controlPointValues->SetName(measurementName.c_str());
@@ -1074,7 +1123,12 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteMeasurements(vtkMRMLJsonWriter* writer,
 
     if (measurement->GetControlPointValues())
     {
-      writer->WriteDoubleArrayProperty("controlPointValues", measurement->GetControlPointValues());
+      vtkDoubleArray* controlPointValues = measurement->GetControlPointValues();
+      writer->WriteNullableDoubleArrayProperty("controlPointValues", controlPointValues);
+      if (controlPointValues->GetNumberOfTuples() == 0 && controlPointValues->GetNumberOfComponents() != 1)
+      {
+        writer->WriteIntProperty("controlPointValuesNumberOfComponents", controlPointValues->GetNumberOfComponents());
+      }
     }
 
     writer->WriteObjectEnd();
@@ -1096,6 +1150,31 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteDisplayProperties(vtkMRMLJsonWriter* wr
 
   writer->WriteBoolProperty("visibility", markupsDisplayNode->GetVisibility());
   writer->WriteDoubleProperty("opacity", markupsDisplayNode->GetOpacity());
+  writer->WriteBoolProperty("scalarVisibility", markupsDisplayNode->GetScalarVisibility());
+  writer->WriteBoolProperty("controlPointScalarVisibility", markupsDisplayNode->GetControlPointScalarVisibility());
+  writer->WriteStringPropertyIfNotEmpty("activeScalarName", markupsDisplayNode->GetActiveScalarName() ? markupsDisplayNode->GetActiveScalarName() : "");
+  writer->WriteStringProperty("activeAttributeLocation", markupsDisplayNode->GetActiveAttributeLocationAsString());
+  writer->WriteStringProperty("scalarRangeFlag", markupsDisplayNode->GetScalarRangeFlagAsString());
+  writer->WriteVectorProperty("scalarRange", markupsDisplayNode->GetScalarRange(), 2);
+  const char* colorNodeID = markupsDisplayNode->GetColorNodeID();
+  std::string portableColorNodeID;
+  if (colorNodeID && colorNodeID[0] != '\0')
+  {
+    vtkMRMLColorNode* colorNode = markupsDisplayNode->GetColorNode();
+    if (colorNode && !colorNode->GetSaveWithScene() && colorNode->GetSingletonTag() && colorNode->GetSingletonTag()[0] != '\0')
+    {
+      portableColorNodeID = colorNodeID;
+    }
+    else
+    {
+      vtkWarningToMessageCollectionWithObjectMacro(this,
+                                                   this->GetUserMessages(),
+                                                   "vtkMRMLMarkupsJsonStorageNode::WriteDisplayProperties",
+                                                   "Color node '" << colorNodeID
+                                                                  << "' is scene-specific and cannot be referenced reliably from a standalone Markups JSON file.");
+    }
+  }
+  writer->WriteStringProperty("colorNodeID", portableColorNodeID);
 
   writer->WriteVectorProperty("color", markupsDisplayNode->GetColor());
   writer->WriteVectorProperty("selectedColor", markupsDisplayNode->GetSelectedColor());

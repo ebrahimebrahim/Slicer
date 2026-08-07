@@ -117,6 +117,14 @@ public:
   VTK_NEWINSTANCE
   vtkDoubleArray* GetDoubleArrayProperty(const char* propertyName);
 
+  /// Get a variable-size, potentially multi-component floating-point vector
+  /// that uses JSON null for undefined (NaN) values. Unlike
+  /// GetDoubleArrayProperty, this method accepts null array items. The optional
+  /// component count is used only when the stored array is empty.
+  /// Only in C++: The caller must take ownership of the returned object.
+  VTK_NEWINSTANCE
+  vtkDoubleArray* GetNullableDoubleArrayProperty(const char* propertyName, int numberOfComponentsForEmptyArray = 1);
+
   /// Get property values from each item of an array.
   /// If no such property is found or it is not the right type then false is returned.
   bool GetArrayItemsStringProperty(const char* arrayName, const char* propertyName, std::vector<std::string>& propertyValues);
@@ -278,6 +286,8 @@ public:
   void WriteVectorProperty(const std::string& propertyName, double* v, int numberOfComponents = 3);
   void WriteMatrix4x4Property(const std::string& propertyName, double v[16], bool flipRasLps);
   void WriteDoubleArrayProperty(const char* propertyName, vtkDoubleArray* doubleArray);
+  /// Write a floating-point array using JSON null for non-finite values.
+  void WriteNullableDoubleArrayProperty(const char* propertyName, vtkDoubleArray* doubleArray);
   /// @}
 
   /// Utility function to convert string to lower case

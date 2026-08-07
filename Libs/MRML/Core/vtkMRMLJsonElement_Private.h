@@ -86,6 +86,7 @@ public:
   virtual void Bool(bool) = 0;
   virtual void Int(int) = 0;
   virtual void Double(double) = 0;
+  virtual void Null() = 0;
 };
 
 // Derived class for FileWriter
@@ -116,6 +117,8 @@ public:
   void Int(int d) override { writer_->Int(d); }
 
   void Double(double d) override { writer_->Double(d); }
+
+  void Null() override { writer_->Null(); }
 
 private:
   std::unique_ptr<rapidjson::PrettyWriter<rapidjson::FileWriteStream>> writer_;
@@ -149,6 +152,8 @@ public:
   void Int(int d) override { writer_->Int(d); }
 
   void Double(double d) override { writer_->Double(d); }
+
+  void Null() override { writer_->Null(); }
 
 private:
   std::unique_ptr<rapidjson::PrettyWriter<rapidjson::StringBuffer>> writer_;

@@ -17,6 +17,7 @@
 
 // MRML includes
 #include "vtkMRMLCoreTestingMacros.h"
+#include "vtkMRMLColorTableNode.h"
 #include "vtkMRMLMarkupsAngleNode.h"
 #include "vtkMRMLMarkupsClosedCurveNode.h"
 #include "vtkMRMLMarkupsCurveNode.h"
@@ -31,6 +32,8 @@
 #include "vtkMRMLMarkupsROIDisplayNode.h"
 #include "vtkMRMLMarkupsROINode.h"
 #include "vtkMRMLMarkupsROIJsonStorageNode.h"
+#include "vtkMRMLMessageCollection.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkURIHandler.h"
 #include "vtkMRMLScene.h"
 #include "vtkPolyData.h"
@@ -39,18 +42,218 @@
 #include <vtkMRMLApplicationLogic.h>
 
 // VTK includes
+#include <vtkAssignAttribute.h>
+#include <vtkDoubleArray.h>
 #include <vtkNew.h>
 #include <vtkTestingOutputWindow.h>
 
 // STD includes
 #include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <limits>
+#include <vector>
 
 namespace
 {
 // enable for more debugging output
 const bool verbose = false;
+
+//----------------------------------------------------------------------------
+int CheckControlPointValues(vtkDoubleArray* array, int expectedNumberOfComponents, const std::vector<double>& expectedValues)
+{
+  CHECK_NOT_NULL(array);
+  CHECK_INT(array->GetNumberOfComponents(), expectedNumberOfComponents);
+  CHECK_INT(array->GetNumberOfValues(), static_cast<int>(expectedValues.size()));
+  for (vtkIdType valueIndex = 0; valueIndex < array->GetNumberOfValues(); ++valueIndex)
+  {
+    const double actualValue = array->GetValue(valueIndex);
+    const double expectedValue = expectedValues[static_cast<size_t>(valueIndex)];
+    if (std::isnan(expectedValue))
+    {
+      CHECK_BOOL(std::isnan(actualValue), true);
+    }
+    else
+    {
+      CHECK_DOUBLE(actualValue, expectedValue);
+    }
+  }
+  return EXIT_SUCCESS;
+}
 } // namespace
+
+//----------------------------------------------------------------------------
+int TestControlPointScalarJsonPersistence(const std::string& fileName)
+{
+  const double undefined = std::numeric_limits<double>::quiet_NaN();
+
+  vtkNew<vtkMRMLScene> sourceScene;
+  vtkNew<vtkMRMLApplicationLogic> sourceApplicationLogic;
+  sourceApplicationLogic->SetMRMLScene(sourceScene);
+  vtkNew<vtkMRMLMarkupsFiducialNode> sourceNode;
+  vtkNew<vtkMRMLMarkupsDisplayNode> sourceDisplayNode;
+  vtkNew<vtkMRMLMarkupsJsonStorageNode> sourceStorageNode;
+  sourceScene->AddNode(sourceNode);
+  sourceScene->AddNode(sourceDisplayNode);
+  sourceScene->AddNode(sourceStorageNode);
+  sourceNode->SetAndObserveDisplayNodeID(sourceDisplayNode->GetID());
+  sourceNode->SetAndObserveStorageNodeID(sourceStorageNode->GetID());
+  sourceNode->AddNControlPoints(3);
+
+  vtkNew<vtkDoubleArray> scalarValues;
+  scalarValues->SetNumberOfTuples(3);
+  scalarValues->SetValue(0, undefined);
+  scalarValues->SetValue(1, -2.5);
+  scalarValues->SetValue(2, 7.0);
+  vtkNew<vtkMRMLStaticMeasurement> scalarMeasurement;
+  scalarMeasurement->SetName("temperature");
+  scalarMeasurement->SetControlPointValues(scalarValues);
+  sourceNode->AddMeasurement(scalarMeasurement);
+
+  vtkNew<vtkDoubleArray> allUndefinedScalarValues;
+  allUndefinedScalarValues->SetNumberOfTuples(3);
+  allUndefinedScalarValues->FillComponent(0, undefined);
+  vtkNew<vtkMRMLStaticMeasurement> allUndefinedScalarMeasurement;
+  allUndefinedScalarMeasurement->SetName("allUndefinedScalar");
+  allUndefinedScalarMeasurement->SetControlPointValues(allUndefinedScalarValues);
+  sourceNode->AddMeasurement(allUndefinedScalarMeasurement);
+
+  vtkNew<vtkDoubleArray> rgbValues;
+  rgbValues->SetNumberOfComponents(3);
+  rgbValues->SetNumberOfTuples(3);
+  const double red[3] = { 1.0, 0.0, 0.0 };
+  const double partiallyUnsetRgb[3] = { std::numeric_limits<double>::infinity(), 0.25, -std::numeric_limits<double>::infinity() };
+  const double blue[3] = { 0.0, 0.0, 1.0 };
+  rgbValues->SetTypedTuple(0, red);
+  rgbValues->SetTypedTuple(1, partiallyUnsetRgb);
+  rgbValues->SetTypedTuple(2, blue);
+  vtkNew<vtkMRMLStaticMeasurement> rgbMeasurement;
+  rgbMeasurement->SetName("directColor");
+  rgbMeasurement->SetControlPointValues(rgbValues);
+  sourceNode->AddMeasurement(rgbMeasurement);
+
+  vtkNew<vtkDoubleArray> rgbaValues;
+  rgbaValues->SetNumberOfComponents(4);
+  rgbaValues->SetNumberOfTuples(3);
+  const double translucentOrange[4] = { 1.0, 0.5, 0.0, 0.25 };
+  const double unsetRgba[4] = { undefined, undefined, undefined, undefined };
+  const double translucentCyan[4] = { 0.0, 0.75, 1.0, 0.6 };
+  rgbaValues->SetTypedTuple(0, translucentOrange);
+  rgbaValues->SetTypedTuple(1, unsetRgba);
+  rgbaValues->SetTypedTuple(2, translucentCyan);
+  vtkNew<vtkMRMLStaticMeasurement> rgbaMeasurement;
+  rgbaMeasurement->SetName("directColorWithAlpha");
+  rgbaMeasurement->SetControlPointValues(rgbaValues);
+  sourceNode->AddMeasurement(rgbaMeasurement);
+
+  vtkNew<vtkDoubleArray> emptyRgbaValues;
+  emptyRgbaValues->SetNumberOfComponents(4);
+  emptyRgbaValues->SetNumberOfTuples(0);
+  vtkNew<vtkMRMLStaticMeasurement> emptyRgbaMeasurement;
+  emptyRgbaMeasurement->SetName("emptyRgba");
+  emptyRgbaMeasurement->SetControlPointValues(emptyRgbaValues);
+  sourceNode->AddMeasurement(emptyRgbaMeasurement);
+
+  vtkNew<vtkMRMLColorTableNode> stableColorNode;
+  stableColorNode->SetSingletonTag("ControlPointColorTest");
+  stableColorNode->SaveWithSceneOff();
+  sourceScene->AddNode(stableColorNode);
+  const std::string stableColorNodeID = stableColorNode->GetID();
+
+  sourceDisplayNode->SetScalarVisibility(true);
+  sourceDisplayNode->SetControlPointScalarVisibility(true);
+  sourceDisplayNode->SetActiveScalar("temperature", vtkAssignAttribute::POINT_DATA);
+  sourceDisplayNode->SetScalarRangeFlag(vtkMRMLDisplayNode::UseManualScalarRange);
+  sourceDisplayNode->SetScalarRange(-10.0, 10.0);
+  sourceDisplayNode->SetAndObserveColorNodeID(stableColorNodeID.c_str());
+
+  sourceStorageNode->SetFileName(fileName.c_str());
+  CHECK_BOOL(sourceStorageNode->WriteData(sourceNode), true);
+  CHECK_INT(sourceStorageNode->GetUserMessages()->GetNumberOfMessagesOfType(vtkCommand::WarningEvent), 0);
+  CHECK_INT(sourceStorageNode->GetUserMessages()->GetNumberOfMessagesOfType(vtkCommand::ErrorEvent), 0);
+
+  vtkNew<vtkMRMLScene> loadedScene;
+  vtkNew<vtkMRMLApplicationLogic> loadedApplicationLogic;
+  loadedApplicationLogic->SetMRMLScene(loadedScene);
+  vtkNew<vtkMRMLMarkupsJsonStorageNode> loadedStorageNode;
+  vtkNew<vtkMRMLColorTableNode> loadedStableColorNode;
+  loadedStableColorNode->SetSingletonTag("ControlPointColorTest");
+  loadedStableColorNode->SaveWithSceneOff();
+  loadedScene->AddNode(loadedStableColorNode);
+  loadedScene->AddNode(loadedStorageNode);
+  loadedStorageNode->SetFileName(fileName.c_str());
+  vtkMRMLMarkupsNode* loadedNode = loadedStorageNode->AddNewMarkupsNodeFromFile(fileName.c_str());
+  CHECK_NOT_NULL(loadedNode);
+  vtkMRMLMarkupsDisplayNode* loadedDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(loadedNode->GetDisplayNode());
+  CHECK_NOT_NULL(loadedDisplayNode);
+
+  CHECK_INT(loadedNode->GetNumberOfControlPoints(), 3);
+  vtkMRMLMeasurement* loadedScalarMeasurement = loadedNode->GetMeasurement("temperature");
+  vtkMRMLMeasurement* loadedAllUndefinedScalarMeasurement = loadedNode->GetMeasurement("allUndefinedScalar");
+  vtkMRMLMeasurement* loadedRgbMeasurement = loadedNode->GetMeasurement("directColor");
+  vtkMRMLMeasurement* loadedRgbaMeasurement = loadedNode->GetMeasurement("directColorWithAlpha");
+  vtkMRMLMeasurement* loadedEmptyRgbaMeasurement = loadedNode->GetMeasurement("emptyRgba");
+  CHECK_NOT_NULL(loadedScalarMeasurement);
+  CHECK_NOT_NULL(loadedAllUndefinedScalarMeasurement);
+  CHECK_NOT_NULL(loadedRgbMeasurement);
+  CHECK_NOT_NULL(loadedRgbaMeasurement);
+  CHECK_NOT_NULL(loadedEmptyRgbaMeasurement);
+  CHECK_EXIT_SUCCESS(CheckControlPointValues(loadedScalarMeasurement->GetControlPointValues(), 1, { undefined, -2.5, 7.0 }));
+  CHECK_EXIT_SUCCESS(CheckControlPointValues(loadedAllUndefinedScalarMeasurement->GetControlPointValues(), 1, { undefined, undefined, undefined }));
+  CHECK_EXIT_SUCCESS(CheckControlPointValues(
+    loadedRgbMeasurement->GetControlPointValues(), 3, { 1.0, 0.0, 0.0, undefined, 0.25, undefined, 0.0, 0.0, 1.0 }));
+  CHECK_EXIT_SUCCESS(CheckControlPointValues(
+    loadedRgbaMeasurement->GetControlPointValues(), 4, { 1.0, 0.5, 0.0, 0.25, undefined, undefined, undefined, undefined, 0.0, 0.75, 1.0, 0.6 }));
+  CHECK_EXIT_SUCCESS(CheckControlPointValues(loadedEmptyRgbaMeasurement->GetControlPointValues(), 4, {}));
+
+  CHECK_BOOL(loadedDisplayNode->GetScalarVisibility(), true);
+  CHECK_BOOL(loadedDisplayNode->GetControlPointScalarVisibility(), true);
+  CHECK_STRING(loadedDisplayNode->GetActiveScalarName(), "temperature");
+  CHECK_INT(loadedDisplayNode->GetActiveAttributeLocation(), vtkAssignAttribute::POINT_DATA);
+  CHECK_INT(loadedDisplayNode->GetScalarRangeFlag(), vtkMRMLDisplayNode::UseManualScalarRange);
+  CHECK_DOUBLE(loadedDisplayNode->GetScalarRange()[0], -10.0);
+  CHECK_DOUBLE(loadedDisplayNode->GetScalarRange()[1], 10.0);
+  CHECK_STRING(loadedDisplayNode->GetColorNodeID(), stableColorNodeID.c_str());
+
+  // A scene-specific color node cannot be resolved from a standalone Markups file.
+  vtkNew<vtkMRMLColorTableNode> sceneSpecificColorNode;
+  sourceScene->AddNode(sceneSpecificColorNode);
+  sourceDisplayNode->SetAndObserveColorNodeID(sceneSpecificColorNode->GetID());
+  const std::string sceneSpecificFileName = fileName + ".scene-specific.mrk.json";
+  sourceStorageNode->SetFileName(sceneSpecificFileName.c_str());
+  sourceStorageNode->GetUserMessages()->ClearMessages();
+  TESTING_OUTPUT_ASSERT_WARNINGS_BEGIN();
+  CHECK_BOOL(sourceStorageNode->WriteData(sourceNode), true);
+  TESTING_OUTPUT_ASSERT_WARNINGS_END();
+  CHECK_BOOL(sourceStorageNode->GetUserMessages()->GetNumberOfMessagesOfType(vtkCommand::WarningEvent) >= 1, true);
+
+  vtkNew<vtkMRMLScene> sceneSpecificLoadedScene;
+  vtkNew<vtkMRMLApplicationLogic> sceneSpecificLoadedApplicationLogic;
+  sceneSpecificLoadedApplicationLogic->SetMRMLScene(sceneSpecificLoadedScene);
+
+  // The explicit empty colorNodeID in the file must override any unrelated
+  // color node inherited from the target scene's display-node defaults.
+  vtkNew<vtkMRMLColorTableNode> unrelatedDefaultColorNode;
+  sceneSpecificLoadedScene->AddNode(unrelatedDefaultColorNode);
+  vtkNew<vtkMRMLMarkupsDisplayNode> targetDefaultDisplayNode;
+  targetDefaultDisplayNode->SetAndObserveColorNodeID(unrelatedDefaultColorNode->GetID());
+  sceneSpecificLoadedScene->AddDefaultNode(targetDefaultDisplayNode);
+  vtkMRMLMarkupsDisplayNode* storedTargetDefaultDisplayNode =
+    vtkMRMLMarkupsDisplayNode::SafeDownCast(sceneSpecificLoadedScene->GetDefaultNodeByClass("vtkMRMLMarkupsDisplayNode"));
+  CHECK_NOT_NULL(storedTargetDefaultDisplayNode);
+  CHECK_STRING(storedTargetDefaultDisplayNode->GetColorNodeID(), unrelatedDefaultColorNode->GetID());
+
+  vtkNew<vtkMRMLMarkupsJsonStorageNode> sceneSpecificLoadedStorageNode;
+  sceneSpecificLoadedScene->AddNode(sceneSpecificLoadedStorageNode);
+  sceneSpecificLoadedStorageNode->SetFileName(sceneSpecificFileName.c_str());
+  vtkMRMLMarkupsNode* sceneSpecificLoadedNode = sceneSpecificLoadedStorageNode->AddNewMarkupsNodeFromFile(sceneSpecificFileName.c_str());
+  CHECK_NOT_NULL(sceneSpecificLoadedNode);
+  vtkMRMLMarkupsDisplayNode* sceneSpecificLoadedDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(sceneSpecificLoadedNode->GetDisplayNode());
+  CHECK_NOT_NULL(sceneSpecificLoadedDisplayNode);
+  CHECK_BOOL(sceneSpecificLoadedDisplayNode->GetColorNodeID() == nullptr || sceneSpecificLoadedDisplayNode->GetColorNodeID()[0] == '\0', true);
+
+  return EXIT_SUCCESS;
+}
 
 int TestStoragNode(vtkMRMLMarkupsNode* markupsNode, vtkMRMLMarkupsStorageNode* storageNode, const std::string& fileName)
 {
@@ -311,6 +514,7 @@ int vtkMRMLMarkupsStorageNodeTest2(int argc, char* argv[])
                                     tempFolder + "/vtkMRMLMarkupsStorageNodeTest2-plane-temp.mrk.json"));
   CHECK_EXIT_SUCCESS(TestStoragNode(
     vtkSmartPointer<vtkMRMLMarkupsROINode>::New(), vtkSmartPointer<vtkMRMLMarkupsROIJsonStorageNode>::New(), tempFolder + "/vtkMRMLMarkupsStorageNodeTest2-roi-temp.mrk.json"));
+  CHECK_EXIT_SUCCESS(TestControlPointScalarJsonPersistence(tempFolder + "/vtkMRMLMarkupsStorageNodeTest2-control-point-scalars-temp.mrk.json"));
 
   // Test if markups node can be instantiated correctly
   vtkNew<vtkMRMLScene> scene;

@@ -42,6 +42,10 @@
 #include "vtkCodedEntry.h"
 #include "vtkMRMLSubjectHierarchyNode.h"
 
+// STD include
+#include <cmath>
+#include <limits>
+
 vtkStandardNewMacro(vtkMRMLJsonElement);
 vtkStandardNewMacro(vtkMRMLJsonReader);
 vtkStandardNewMacro(vtkMRMLJsonWriter);
@@ -632,6 +636,133 @@ vtkDoubleArray* vtkMRMLJsonElement::GetDoubleArrayProperty(const char* propertyN
 }
 
 //----------------------------------------------------------------------------
+vtkDoubleArray* vtkMRMLJsonElement::GetNullableDoubleArrayProperty(const char* propertyName, int numberOfComponentsForEmptyArray /*=1*/)
+{
+  if (!this->Internal->JsonValue.HasMember(propertyName))
+  {
+    return nullptr;
+  }
+  rapidjson::Value& arrayItem = this->Internal->JsonValue[propertyName];
+  if (!arrayItem.IsArray())
+  {
+    vtkErrorToMessageCollectionWithObjectMacro(
+      this, this->GetUserMessages(), "vtkMRMLJsonElement::GetNullableDoubleArrayProperty", "Property " << propertyName << " is expected to contain an array");
+    return nullptr;
+  }
+
+  vtkNew<vtkDoubleArray> values;
+  const int numberOfTuples = static_cast<int>(arrayItem.Size());
+  if (numberOfTuples == 0)
+  {
+    if (numberOfComponentsForEmptyArray < 1)
+    {
+      vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                 this->GetUserMessages(),
+                                                 "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                                 "Property " << propertyName << " has an invalid component count " << numberOfComponentsForEmptyArray);
+      return nullptr;
+    }
+    values->SetNumberOfComponents(numberOfComponentsForEmptyArray);
+    values->SetNumberOfTuples(0);
+    values->Register(this);
+    return values;
+  }
+
+  rapidjson::Value* firstDefinedItem = nullptr;
+  for (auto& item : arrayItem.GetArray())
+  {
+    if (!item.IsNull())
+    {
+      firstDefinedItem = &item;
+      break;
+    }
+  }
+
+  if (!firstDefinedItem || firstDefinedItem->IsNumber())
+  {
+    values->SetNumberOfComponents(1);
+    values->SetNumberOfTuples(numberOfTuples);
+    for (int tupleIndex = 0; tupleIndex < numberOfTuples; ++tupleIndex)
+    {
+      rapidjson::Value& item = arrayItem[tupleIndex];
+      if (item.IsNull())
+      {
+        values->SetValue(tupleIndex, std::numeric_limits<double>::quiet_NaN());
+      }
+      else if (item.IsNumber())
+      {
+        values->SetValue(tupleIndex, item.GetDouble());
+      }
+      else
+      {
+        vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                   this->GetUserMessages(),
+                                                   "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                                   "Property " << propertyName << " is expected to contain numbers or null values");
+        return nullptr;
+      }
+    }
+  }
+  else if (firstDefinedItem->IsArray())
+  {
+    const int numberOfComponents = static_cast<int>(firstDefinedItem->Size());
+    if (numberOfComponents < 1)
+    {
+      vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                 this->GetUserMessages(),
+                                                 "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                                 "Property " << propertyName << " contains an empty tuple");
+      return nullptr;
+    }
+    values->SetNumberOfComponents(numberOfComponents);
+    values->SetNumberOfTuples(numberOfTuples);
+    for (int tupleIndex = 0; tupleIndex < numberOfTuples; ++tupleIndex)
+    {
+      rapidjson::Value& tupleItem = arrayItem[tupleIndex];
+      if (!tupleItem.IsArray() || static_cast<int>(tupleItem.Size()) != numberOfComponents)
+      {
+        vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                   this->GetUserMessages(),
+                                                   "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                                   "Property " << propertyName << " is expected to contain equal-sized arrays");
+        return nullptr;
+      }
+      for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+      {
+        rapidjson::Value& componentItem = tupleItem[componentIndex];
+        if (componentItem.IsNull())
+        {
+          values->SetComponent(tupleIndex, componentIndex, std::numeric_limits<double>::quiet_NaN());
+        }
+        else if (componentItem.IsNumber())
+        {
+          values->SetComponent(tupleIndex, componentIndex, componentItem.GetDouble());
+        }
+        else
+        {
+          vtkErrorToMessageCollectionWithObjectMacro(this,
+                                                     this->GetUserMessages(),
+                                                     "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                                     "Property " << propertyName << " is expected to contain numbers or null values");
+          return nullptr;
+        }
+      }
+    }
+  }
+  else
+  {
+    vtkErrorToMessageCollectionWithObjectMacro(this,
+                                               this->GetUserMessages(),
+                                               "vtkMRMLJsonElement::GetNullableDoubleArrayProperty",
+                                               "Property " << propertyName << " is expected to contain numbers, null values, or arrays");
+    return nullptr;
+  }
+
+  values->Register(this);
+  return values;
+}
+
+//----------------------------------------------------------------------------
 vtkMRMLJsonReader::vtkMRMLJsonReader() {}
 
 //----------------------------------------------------------------------------
@@ -1168,6 +1299,43 @@ void vtkMRMLJsonWriter::WriteDoubleArrayProperty(const char* propertyName, vtkDo
     {
       double* tuple = doubleArray->GetTuple(tupleIndex);
       this->Internal->WriteVector(tuple, numberOfComponents);
+    }
+  }
+  this->WriteArrayPropertyEnd();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLJsonWriter::WriteNullableDoubleArrayProperty(const char* propertyName, vtkDoubleArray* doubleArray)
+{
+  if (!doubleArray)
+  {
+    return;
+  }
+
+  this->WriteArrayPropertyStart(propertyName);
+  const int numberOfComponents = doubleArray->GetNumberOfComponents();
+  const int numberOfTuples = doubleArray->GetNumberOfTuples();
+  for (int tupleIndex = 0; tupleIndex < numberOfTuples; ++tupleIndex)
+  {
+    if (numberOfComponents > 1)
+    {
+      this->Internal->Writer->StartArray();
+    }
+    for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+    {
+      const double value = doubleArray->GetComponent(tupleIndex, componentIndex);
+      if (!std::isfinite(value))
+      {
+        this->Internal->Writer->Null();
+      }
+      else
+      {
+        this->Internal->Writer->Double(value);
+      }
+    }
+    if (numberOfComponents > 1)
+    {
+      this->Internal->Writer->EndArray();
     }
   }
   this->WriteArrayPropertyEnd();
