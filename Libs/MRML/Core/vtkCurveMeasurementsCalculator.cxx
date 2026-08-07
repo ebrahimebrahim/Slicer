@@ -57,15 +57,7 @@ vtkCurveMeasurementsCalculator::vtkCurveMeasurementsCalculator()
 //------------------------------------------------------------------------------
 vtkCurveMeasurementsCalculator::~vtkCurveMeasurementsCalculator()
 {
-  // Remove observations before deleting control point array callback and observed arrays collection
-  for (int idx = 0; idx < this->ObservedControlPointArrays->GetNumberOfItems(); ++idx)
-  {
-    vtkDoubleArray* observedArray = vtkDoubleArray::SafeDownCast(this->ObservedControlPointArrays->GetItemAsObject(idx));
-    if (observedArray)
-    {
-      observedArray->RemoveObserver(this->ControlPointArrayModifiedCallbackCommand);
-    }
-  }
+  this->RemoveControlPointArrayObservations();
 
   if (this->ControlPointArrayModifiedCallbackCommand)
   {
@@ -95,6 +87,7 @@ void vtkCurveMeasurementsCalculator::SetInputMarkupsMRMLNode(vtkMRMLMarkupsNode*
   {
     return;
   }
+  this->RemoveControlPointArrayObservations();
   this->InputMarkupsMRMLNode = node;
   this->Modified();
 }
@@ -527,6 +520,11 @@ bool vtkCurveMeasurementsCalculator::CalculatePolyDataTorsion(vtkPolyData* polyD
 //------------------------------------------------------------------------------
 bool vtkCurveMeasurementsCalculator::InterpolateControlPointMeasurementToPolyData(vtkPolyData* outputPolyData)
 {
+  // RequestData may run repeatedly as values are edited. Rebuild the observed
+  // set so each current array has exactly one callback and removed or disabled
+  // measurements are released.
+  this->RemoveControlPointArrayObservations();
+
   if (!this->InputMarkupsMRMLNode)
   {
     return false;
@@ -566,13 +564,6 @@ bool vtkCurveMeasurementsCalculator::InterpolateControlPointMeasurementToPolyDat
     {
       continue;
     }
-    if (controlPointValues->GetNumberOfComponents() != 1)
-    {
-      // TODO: Add support for more components
-      vtkWarningMacro("InterpolateControlPointMeasurementToPolyData: Only the interpolation of single component control point measurements is implemented");
-      return false;
-    }
-
     // Observe control point data array. If it is modified, then interpolation needs to be re-run
     controlPointValues->AddObserver(vtkCommand::ModifiedEvent, this->ControlPointArrayModifiedCallbackCommand);
     vtkWeakPointer<vtkDoubleArray> controlPointArrayWeakPointer(controlPointValues);
@@ -607,13 +598,9 @@ bool vtkCurveMeasurementsCalculator::InterpolateArray(vtkDoubleArray* inputValue
     return false;
   }
   vtkIdType numberOfValues = pedigreeIdsArray->GetNumberOfValues();
-  if (inputValues->GetNumberOfComponents() != 1)
-  {
-    // TODO: Add support for more components
-    vtkGenericWarningMacro("vtkCurveMeasurementsCalculator::InterpolateArray: Only the interpolation of single component values is implemented");
-    return false;
-  }
+  const int numberOfComponents = inputValues->GetNumberOfComponents();
   interpolatedValues->Reset(); // empty without reallocating memory
+  interpolatedValues->SetNumberOfComponents(numberOfComponents);
   if (numberOfValues < 1)
   {
     return true;
@@ -630,9 +617,13 @@ bool vtkCurveMeasurementsCalculator::InterpolateArray(vtkDoubleArray* inputValue
                            << inputValues->GetNumberOfTuples() << " values in the input array");
     return false;
   }
+  interpolatedValues->SetNumberOfTuples(numberOfValues);
   if (numberOfValues == 1)
   {
-    interpolatedValues->InsertNextValue(inputValues->GetValue(0));
+    for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+    {
+      interpolatedValues->SetComponent(0, componentIndex, inputValues->GetComponent(0, componentIndex));
+    }
     return true;
   }
   // Perform interpolation on the control points measurement values in each enabled measurement
@@ -642,18 +633,16 @@ bool vtkCurveMeasurementsCalculator::InterpolateArray(vtkDoubleArray* inputValue
     double pedigreeID = pedigreeIdsArray->GetValue(pointIdx) * pedigreeIdsValueScale;
     vtkIdType controlPointIndex = vtkIdType(pedigreeID);
     double fractionValue = pedigreeID - controlPointIndex;
-    double currentControlPointValue = inputValues->GetValue(controlPointIndex % inputValues->GetNumberOfTuples());
-    if (fractionValue < VTK_DBL_EPSILON)
+    for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
     {
-      // Point corresponds to a control point
-      interpolatedValues->InsertValue(pointIdx, currentControlPointValue);
-    }
-    else
-    {
-      // Need to interpolate
-      double nextControlPointValue = inputValues->GetValue((controlPointIndex + 1) % inputValues->GetNumberOfTuples());
-      double interpolatedValue = currentControlPointValue + fractionValue * (nextControlPointValue - currentControlPointValue);
-      interpolatedValues->InsertValue(pointIdx, interpolatedValue);
+      double currentControlPointValue = inputValues->GetComponent(controlPointIndex % inputValues->GetNumberOfTuples(), componentIndex);
+      double interpolatedValue = currentControlPointValue;
+      if (fractionValue >= VTK_DBL_EPSILON)
+      {
+        double nextControlPointValue = inputValues->GetComponent((controlPointIndex + 1) % inputValues->GetNumberOfTuples(), componentIndex);
+        interpolatedValue = currentControlPointValue + fractionValue * (nextControlPointValue - currentControlPointValue);
+      }
+      interpolatedValues->SetComponent(pointIdx, componentIndex, interpolatedValue);
     }
   }
   return true;
@@ -664,6 +653,24 @@ void vtkCurveMeasurementsCalculator::OnControlPointArrayModified(vtkObject* vtkN
 {
   vtkCurveMeasurementsCalculator* self = reinterpret_cast<vtkCurveMeasurementsCalculator*>(clientData);
   self->Modified();
+}
+
+//---------------------------------------------------------------------------
+void vtkCurveMeasurementsCalculator::RemoveControlPointArrayObservations()
+{
+  if (!this->ObservedControlPointArrays || !this->ControlPointArrayModifiedCallbackCommand)
+  {
+    return;
+  }
+  for (int arrayIndex = 0; arrayIndex < this->ObservedControlPointArrays->GetNumberOfItems(); ++arrayIndex)
+  {
+    vtkDoubleArray* observedArray = vtkDoubleArray::SafeDownCast(this->ObservedControlPointArrays->GetItemAsObject(arrayIndex));
+    if (observedArray)
+    {
+      observedArray->RemoveObservers(vtkCommand::ModifiedEvent, this->ControlPointArrayModifiedCallbackCommand);
+    }
+  }
+  this->ObservedControlPointArrays->RemoveAllItems();
 }
 
 //---------------------------------------------------------------------------

@@ -115,6 +115,9 @@ protected:
   /// If a data array to interpolate is modified, then the interpolation needs to be re-run.
   static void OnControlPointArrayModified(vtkObject* caller, unsigned long eid, void* clientData, void* callData);
 
+  /// Stop observing all previously interpolated control-point arrays.
+  void RemoveControlPointArrayObservations();
+
 protected:
   /// Input markups node containing the measurement list for derived measurements (such as interpolation)
   vtkWeakPointer<vtkMRMLMarkupsNode> InputMarkupsMRMLNode;

@@ -23,6 +23,7 @@ or http://www.slicer.org/copyright/copyright.txt for details.
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 
+class vtkCallbackCommand;
 class vtkMRMLUnitNode;
 
 /// \brief Class for storing well-defined measurement results, using coded entries.
@@ -78,7 +79,10 @@ public:
     /// InputDataModifiedEvent is only invoked when input parameters are changed.
     /// In contrast, ModifiedEvent event is called if either an input or output parameter is changed.
     // vtkCommand::UserEvent + 555 is just a random value that is very unlikely to be used for anything else in this class
-    InputDataModifiedEvent = vtkCommand::UserEvent + 555
+    InputDataModifiedEvent = vtkCommand::UserEvent + 555,
+
+    /// Invoked when the per-control-point measurement values are changed.
+    ControlPointValuesModifiedEvent = vtkCommand::UserEvent + 556
   };
 
   vtkTypeMacro(vtkMRMLMeasurement, vtkObject);
@@ -182,7 +186,17 @@ public:
   /// Get measurement value and units as a single human-readable string.
   std::string GetValueWithUnitsAsPrintableString();
 
-  /// Set the per-control point measurement values
+  /// Set the per-control-point measurement values.
+  /// The input array is deep-copied into an array owned by this measurement.
+  /// Replacing one non-null array with another preserves the owned array object,
+  /// so pointers and observers obtained from GetControlPointValues() remain valid.
+  /// For per-control-point data, tuple indices correspond to control-point
+  /// indices and the tuple count must match the number of control points. NaN
+  /// components represent undefined values.
+  /// Passing nullptr clears the owned array. After editing the owned array
+  /// directly, callers must invoke Modified() on it; that ModifiedEvent is
+  /// forwarded as ModifiedEvent and ControlPointValuesModifiedEvent on this
+  /// measurement.
   void SetControlPointValues(vtkDoubleArray* inputValues);
   vtkGetObjectMacro(ControlPointValues, vtkDoubleArray);
 
@@ -206,6 +220,10 @@ protected:
   /// Helper function to get unit node from the scene based on quantity name.
   vtkMRMLUnitNode* GetUnitNode(const char* quantityName);
 
+  /// Forward modifications of the per-control-point values array to this measurement.
+  static void ControlPointValuesModifiedCallback(vtkObject* caller, unsigned long event, void* clientData, void* callData);
+  void InvokeControlPointValuesModifiedEvent();
+
 protected:
   bool Enabled{ true };
   std::string Name;
@@ -223,6 +241,7 @@ protected:
 
   /// Per-control point measurements.
   vtkSmartPointer<vtkDoubleArray> ControlPointValues;
+  vtkSmartPointer<vtkCallbackCommand> ControlPointValuesModifiedCallbackCommand;
   /// Surface mesh for displaying computed value.
   vtkSmartPointer<vtkPolyData> MeshValue;
   /// MRML node used to calculate the measurement \sa Execute

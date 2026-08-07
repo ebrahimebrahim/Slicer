@@ -54,8 +54,9 @@
 #include VTK_EIGEN(Dense)
 
 // STD includes
-#include <sstream>
 #include <algorithm>
+#include <limits>
+#include <sstream>
 
 //----------------------------------------------------------------------------
 vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
@@ -90,6 +91,7 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   this->TransformedCurvePolyLocator = vtkSmartPointer<vtkPointLocator>::New();
   this->InteractionHandleToWorldMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
   this->ContentModifiedEvents->InsertNextValue(vtkMRMLMarkupsNode::PointModifiedEvent);
+  this->ContentModifiedEvents->InsertNextValue(vtkMRMLMarkupsNode::MeasurementsModifiedEvent);
 
   this->Measurements = vtkCollection::New();
   vtkObserveMRMLObjectMacro(this->Measurements);
@@ -267,11 +269,32 @@ void vtkMRMLMarkupsNode::ProcessMRMLEvents(vtkObject* caller, unsigned long even
     for (this->Measurements->InitTraversal(it); (measurementObject = this->Measurements->GetNextItemAsObject(it));)
     {
       vtkObserveMRMLObjectEventMacroNoWarning(measurementObject, vtkMRMLMeasurement::InputDataModifiedEvent);
+      vtkObserveMRMLObjectEventMacroNoWarning(measurementObject, vtkMRMLMeasurement::ControlPointValuesModifiedEvent);
     }
+    this->StorableModifiedTime.Modified();
+    this->Modified();
+    this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::MeasurementsModifiedEvent);
   }
-  else if (caller->IsA("vtkMRMLMeasurement") && event == vtkMRMLMeasurement::InputDataModifiedEvent)
+  else if (caller && caller->IsA("vtkMRMLMeasurement") && event == vtkMRMLMeasurement::InputDataModifiedEvent)
   {
     this->UpdateAllMeasurements();
+  }
+  else if (caller && caller->IsA("vtkMRMLMeasurement") && event == vtkMRMLMeasurement::ControlPointValuesModifiedEvent)
+  {
+    if (!this->IsUpdatingStaticControlPointMeasurements)
+    {
+      for (int displayNodeIndex = 0; displayNodeIndex < this->GetNumberOfDisplayNodes(); ++displayNodeIndex)
+      {
+        vtkMRMLMarkupsDisplayNode* displayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetNthDisplayNode(displayNodeIndex));
+        if (displayNode)
+        {
+          displayNode->UpdateScalarRange();
+        }
+      }
+      this->StorableModifiedTime.Modified();
+      this->Modified();
+      this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::MeasurementsModifiedEvent);
+    }
   }
   Superclass::ProcessMRMLEvents(caller, event, callData);
 }
@@ -436,6 +459,7 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
     return;
   }
 
+  const int previousNumberOfControlPoints = this->GetNumberOfControlPoints();
   this->LastUsedControlPointNumber = 0;
   bool definedPointsExisted = false;
   bool missingPointsExisted = false;
@@ -453,6 +477,7 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
   }
 
   this->ControlPoints.clear();
+  const bool controlPointMeasurementsModified = this->ClearStaticControlPointMeasurements(previousNumberOfControlPoints);
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -470,10 +495,15 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
   {
     this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointPositionNonMissingEvent);
   }
+  this->StorableModifiedTime.Modified();
 
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateAllMeasurements();
+  }
+  if (controlPointMeasurementsModified)
+  {
+    this->NotifyStaticControlPointMeasurementsModified();
   }
 }
 
@@ -620,7 +650,10 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint* controlPoint, bool autoLab
     controlPoint->Label = this->GenerateControlPointLabel(this->LastUsedControlPointNumber);
   }
 
+  const int previousNumberOfControlPoints = this->GetNumberOfControlPoints();
   this->ControlPoints.push_back(controlPoint);
+  const bool controlPointMeasurementsModified =
+    this->InsertUndefinedTupleInStaticControlPointMeasurements(previousNumberOfControlPoints, previousNumberOfControlPoints);
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -647,6 +680,10 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint* controlPoint, bool autoLab
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateAllMeasurements();
+  }
+  if (controlPointMeasurementsModified)
+  {
+    this->NotifyStaticControlPointMeasurementsModified();
   }
   return controlPointIndex;
 }
@@ -834,8 +871,10 @@ void vtkMRMLMarkupsNode::RemoveNthControlPoint(int pointIndex)
 
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointAboutToBeRemovedEvent, static_cast<void*>(&pointIndex));
 
+  const int previousNumberOfControlPoints = this->GetNumberOfControlPoints();
   delete this->ControlPoints[static_cast<unsigned int>(pointIndex)];
   this->ControlPoints.erase(this->ControlPoints.begin() + pointIndex);
+  const bool controlPointMeasurementsModified = this->RemoveTupleFromStaticControlPointMeasurements(pointIndex, previousNumberOfControlPoints);
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -855,6 +894,10 @@ void vtkMRMLMarkupsNode::RemoveNthControlPoint(int pointIndex)
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateAllMeasurements();
+  }
+  if (controlPointMeasurementsModified)
+  {
+    this->NotifyStaticControlPointMeasurementsModified();
   }
 }
 
@@ -880,6 +923,7 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint* controlPoint, int targ
 
   std::vector<ControlPoint*>::iterator pos = this->ControlPoints.begin() + destIndex;
   this->ControlPoints.insert(pos, controlPoint);
+  const bool controlPointMeasurementsModified = this->InsertUndefinedTupleInStaticControlPointMeasurements(destIndex, listSize);
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -896,9 +940,14 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint* controlPoint, int targ
   {
     this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointPositionMissingEvent, static_cast<void*>(&targetIndex));
   }
+  this->StorableModifiedTime.Modified();
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateAllMeasurements();
+  }
+  if (controlPointMeasurementsModified)
+  {
+    this->NotifyStaticControlPointMeasurementsModified();
   }
   return true;
 }
@@ -976,6 +1025,7 @@ void vtkMRMLMarkupsNode::SwapControlPoints(int m1, int m2)
   *controlPoint1 = *controlPoint2;
   // and copy the backup of the first one into the second
   *controlPoint2 = controlPoint1Backup;
+  const bool controlPointMeasurementsModified = this->SwapTuplesInStaticControlPointMeasurements(m1, m2, this->GetNumberOfControlPoints());
 
   if (!this->GetDisableModifiedEvent())
   {
@@ -990,6 +1040,10 @@ void vtkMRMLMarkupsNode::SwapControlPoints(int m1, int m2)
   if (!this->GetDisableModifiedEvent())
   {
     this->UpdateAllMeasurements();
+  }
+  if (controlPointMeasurementsModified)
+  {
+    this->NotifyStaticControlPointMeasurementsModified();
   }
 }
 
@@ -2684,6 +2738,168 @@ bool vtkMRMLMarkupsNode::SetControlPointLabelsWorld(vtkStringArray* labels, vtkP
 }
 
 //---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::InsertUndefinedTupleInStaticControlPointMeasurements(int controlPointIndex, int previousNumberOfControlPoints)
+{
+  if (controlPointIndex < 0 || controlPointIndex > previousNumberOfControlPoints)
+  {
+    return false;
+  }
+
+  const bool wasUpdatingStaticControlPointMeasurements = this->IsUpdatingStaticControlPointMeasurements;
+  this->IsUpdatingStaticControlPointMeasurements = true;
+  bool controlPointMeasurementsModified = false;
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    vtkMRMLStaticMeasurement* measurement = vtkMRMLStaticMeasurement::SafeDownCast(this->GetNthMeasurement(measurementIndex));
+    vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+    if (!values || values->GetNumberOfTuples() != previousNumberOfControlPoints)
+    {
+      continue;
+    }
+
+    const int numberOfComponents = values->GetNumberOfComponents();
+    vtkNew<vtkDoubleArray> updatedValues;
+    updatedValues->DeepCopy(values);
+    updatedValues->SetNumberOfTuples(previousNumberOfControlPoints + 1);
+    for (int destinationTupleIndex = 0; destinationTupleIndex <= previousNumberOfControlPoints; ++destinationTupleIndex)
+    {
+      if (destinationTupleIndex == controlPointIndex)
+      {
+        for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+        {
+          updatedValues->SetComponent(destinationTupleIndex, componentIndex, std::numeric_limits<double>::quiet_NaN());
+        }
+        continue;
+      }
+      const int sourceTupleIndex = destinationTupleIndex < controlPointIndex ? destinationTupleIndex : destinationTupleIndex - 1;
+      for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+      {
+        updatedValues->SetComponent(destinationTupleIndex, componentIndex, values->GetComponent(sourceTupleIndex, componentIndex));
+      }
+    }
+    measurement->SetControlPointValues(updatedValues);
+    controlPointMeasurementsModified = true;
+  }
+  this->IsUpdatingStaticControlPointMeasurements = wasUpdatingStaticControlPointMeasurements;
+  return controlPointMeasurementsModified && !wasUpdatingStaticControlPointMeasurements;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::RemoveTupleFromStaticControlPointMeasurements(int controlPointIndex, int previousNumberOfControlPoints)
+{
+  if (controlPointIndex < 0 || controlPointIndex >= previousNumberOfControlPoints)
+  {
+    return false;
+  }
+
+  const bool wasUpdatingStaticControlPointMeasurements = this->IsUpdatingStaticControlPointMeasurements;
+  this->IsUpdatingStaticControlPointMeasurements = true;
+  bool controlPointMeasurementsModified = false;
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    vtkMRMLStaticMeasurement* measurement = vtkMRMLStaticMeasurement::SafeDownCast(this->GetNthMeasurement(measurementIndex));
+    vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+    if (!values || values->GetNumberOfTuples() != previousNumberOfControlPoints)
+    {
+      continue;
+    }
+
+    const int numberOfComponents = values->GetNumberOfComponents();
+    vtkNew<vtkDoubleArray> updatedValues;
+    updatedValues->DeepCopy(values);
+    updatedValues->SetNumberOfTuples(previousNumberOfControlPoints - 1);
+    for (int destinationTupleIndex = 0; destinationTupleIndex < previousNumberOfControlPoints - 1; ++destinationTupleIndex)
+    {
+      const int sourceTupleIndex = destinationTupleIndex < controlPointIndex ? destinationTupleIndex : destinationTupleIndex + 1;
+      for (int componentIndex = 0; componentIndex < numberOfComponents; ++componentIndex)
+      {
+        updatedValues->SetComponent(destinationTupleIndex, componentIndex, values->GetComponent(sourceTupleIndex, componentIndex));
+      }
+    }
+    measurement->SetControlPointValues(updatedValues);
+    controlPointMeasurementsModified = true;
+  }
+  this->IsUpdatingStaticControlPointMeasurements = wasUpdatingStaticControlPointMeasurements;
+  return controlPointMeasurementsModified && !wasUpdatingStaticControlPointMeasurements;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::SwapTuplesInStaticControlPointMeasurements(int controlPointIndex1, int controlPointIndex2, int numberOfControlPoints)
+{
+  if (controlPointIndex1 < 0 || controlPointIndex1 >= numberOfControlPoints || controlPointIndex2 < 0 || controlPointIndex2 >= numberOfControlPoints
+      || controlPointIndex1 == controlPointIndex2)
+  {
+    return false;
+  }
+
+  const bool wasUpdatingStaticControlPointMeasurements = this->IsUpdatingStaticControlPointMeasurements;
+  this->IsUpdatingStaticControlPointMeasurements = true;
+  bool controlPointMeasurementsModified = false;
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    vtkMRMLStaticMeasurement* measurement = vtkMRMLStaticMeasurement::SafeDownCast(this->GetNthMeasurement(measurementIndex));
+    vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+    if (!values || values->GetNumberOfTuples() != numberOfControlPoints)
+    {
+      continue;
+    }
+
+    vtkNew<vtkDoubleArray> updatedValues;
+    updatedValues->DeepCopy(values);
+    for (int componentIndex = 0; componentIndex < values->GetNumberOfComponents(); ++componentIndex)
+    {
+      updatedValues->SetComponent(controlPointIndex1, componentIndex, values->GetComponent(controlPointIndex2, componentIndex));
+      updatedValues->SetComponent(controlPointIndex2, componentIndex, values->GetComponent(controlPointIndex1, componentIndex));
+    }
+    measurement->SetControlPointValues(updatedValues);
+    controlPointMeasurementsModified = true;
+  }
+  this->IsUpdatingStaticControlPointMeasurements = wasUpdatingStaticControlPointMeasurements;
+  return controlPointMeasurementsModified && !wasUpdatingStaticControlPointMeasurements;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLMarkupsNode::ClearStaticControlPointMeasurements(int previousNumberOfControlPoints)
+{
+  const bool wasUpdatingStaticControlPointMeasurements = this->IsUpdatingStaticControlPointMeasurements;
+  this->IsUpdatingStaticControlPointMeasurements = true;
+  bool controlPointMeasurementsModified = false;
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    vtkMRMLStaticMeasurement* measurement = vtkMRMLStaticMeasurement::SafeDownCast(this->GetNthMeasurement(measurementIndex));
+    vtkDoubleArray* values = measurement ? measurement->GetControlPointValues() : nullptr;
+    if (!values || values->GetNumberOfTuples() != previousNumberOfControlPoints)
+    {
+      continue;
+    }
+
+    vtkNew<vtkDoubleArray> updatedValues;
+    updatedValues->DeepCopy(values);
+    updatedValues->SetNumberOfTuples(0);
+    measurement->SetControlPointValues(updatedValues);
+    controlPointMeasurementsModified = true;
+  }
+  this->IsUpdatingStaticControlPointMeasurements = wasUpdatingStaticControlPointMeasurements;
+  return controlPointMeasurementsModified && !wasUpdatingStaticControlPointMeasurements;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::NotifyStaticControlPointMeasurementsModified()
+{
+  for (int displayNodeIndex = 0; displayNodeIndex < this->GetNumberOfDisplayNodes(); ++displayNodeIndex)
+  {
+    vtkMRMLMarkupsDisplayNode* displayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetNthDisplayNode(displayNodeIndex));
+    if (displayNode)
+    {
+      displayNode->UpdateScalarRange();
+    }
+  }
+  this->StorableModifiedTime.Modified();
+  this->Modified();
+  this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::MeasurementsModifiedEvent);
+}
+
+//---------------------------------------------------------------------------
 int vtkMRMLMarkupsNode::GetNumberOfMeasurements()
 {
   return static_cast<int>(this->Measurements->GetNumberOfItems());
@@ -2749,6 +2965,11 @@ void vtkMRMLMarkupsNode::SetNthMeasurement(int id, vtkMRMLMeasurement* measureme
   }
   else
   {
+    vtkMRMLMeasurement* previousMeasurement = this->GetNthMeasurement(id);
+    if (previousMeasurement && previousMeasurement != measurement)
+    {
+      vtkUnObserveMRMLObjectMacro(previousMeasurement);
+    }
     this->Measurements->ReplaceItem(id, measurement);
   }
 }
@@ -2810,6 +3031,12 @@ void vtkMRMLMarkupsNode::RemoveNthMeasurement(int id)
   if (id < 0 || id >= this->GetNumberOfMeasurements())
   {
     vtkErrorMacro("vtkMRMLMarkupsNode::RemoveNthMeasurement failed: id out of range");
+    return;
+  }
+  vtkMRMLMeasurement* measurement = this->GetNthMeasurement(id);
+  if (measurement)
+  {
+    vtkUnObserveMRMLObjectMacro(measurement);
   }
   this->Measurements->RemoveItem(id);
 }
@@ -2817,6 +3044,14 @@ void vtkMRMLMarkupsNode::RemoveNthMeasurement(int id)
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::RemoveAllMeasurements()
 {
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); ++measurementIndex)
+  {
+    vtkMRMLMeasurement* measurement = this->GetNthMeasurement(measurementIndex);
+    if (measurement)
+    {
+      vtkUnObserveMRMLObjectMacro(measurement);
+    }
+  }
   this->Measurements->RemoveAllItems();
 }
 
@@ -2836,12 +3071,14 @@ void vtkMRMLMarkupsNode::ClearValueForAllMeasurements()
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::UpdateAllMeasurements()
 {
-  if (this->IsUpdatingPoints)
+  if (this->IsUpdatingPoints || this->IsUpdatingMeasurements)
   {
     return;
   }
 
+  this->IsUpdatingMeasurements = true;
   this->UpdateMeasurementsInternal();
+  this->IsUpdatingMeasurements = false;
 }
 
 //---------------------------------------------------------------------------

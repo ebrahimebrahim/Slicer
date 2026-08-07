@@ -248,6 +248,7 @@ public:
     CenterOfRotationModifiedEvent,           ///< When position of the center of rotation is changed (used for example for rotating closed curves).
     FixedNumberOfControlPointsModifiedEvent, ///< When fixed number of points set/unset.
     PointAboutToBeRemovedEvent,              ///< Point is about to be deleted. Thus it is alive when event is called.
+    MeasurementsModifiedEvent,               ///< Measurement list or per-control-point values changed. Modified event is invoked, too.
   };
 
   /// Placement status of a control point.
@@ -979,6 +980,15 @@ protected:
   /// May be overridden in subclasses to compute special measurements (for example that apply on the curve polydata).
   virtual void UpdateMeasurementsInternal();
 
+  /// Keep per-control-point values in static measurements aligned with structural
+  /// control-point edits. Arrays whose tuple count does not match the control-point
+  /// count before the edit are left unchanged.
+  bool InsertUndefinedTupleInStaticControlPointMeasurements(int controlPointIndex, int previousNumberOfControlPoints);
+  bool RemoveTupleFromStaticControlPointMeasurements(int controlPointIndex, int previousNumberOfControlPoints);
+  bool SwapTuplesInStaticControlPointMeasurements(int controlPointIndex1, int controlPointIndex2, int numberOfControlPoints);
+  bool ClearStaticControlPointMeasurements(int previousNumberOfControlPoints);
+  void NotifyStaticControlPointMeasurementsModified();
+
   /// Helper function to write measurements to node Description property.
   /// This is a short-term solution until measurements display is properly implemented.
   virtual void WriteMeasurementsToDescription();
@@ -1055,6 +1065,13 @@ protected:
 
   /// Flag set from SetControlPointPositionsWorld that pauses update of measurements until the update is complete.
   bool IsUpdatingPoints{ false };
+
+  /// Prevent measurement output changes from recursively starting another measurement update.
+  bool IsUpdatingMeasurements{ false };
+
+  /// Prevent events emitted while synchronizing static measurement arrays from
+  /// generating redundant measurement-modified notifications.
+  bool IsUpdatingStaticControlPointMeasurements{ false };
 
   friend class qSlicerMarkupsModuleWidget; // To directly access measurements
 };

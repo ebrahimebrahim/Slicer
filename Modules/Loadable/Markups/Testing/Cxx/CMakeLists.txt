@@ -11,6 +11,7 @@ slicer_is_loadable_builtin_module_enabled("SceneViews" _build_scene_views_module
 set(KIT_TEST_SRCS
   vtkMRMLMarkupsDisplayNodeTest1.cxx
   vtkMRMLMarkupsFiducialNodeTest1.cxx
+  vtkMRMLMarkupsControlPointMeasurementsTest.cxx
   vtkMRMLMarkupsNodeTest1.cxx
   vtkMRMLMarkupsNodeTest2.cxx
   vtkMRMLMarkupsNodeTest3.cxx
@@ -69,6 +70,7 @@ slicerMacroConfigureModuleCxxTestDriver(
 
 SIMPLE_TEST( vtkMRMLMarkupsDisplayNodeTest1 )
 SIMPLE_TEST( vtkMRMLMarkupsFiducialNodeTest1 )
+SIMPLE_TEST( vtkMRMLMarkupsControlPointMeasurementsTest )
 SIMPLE_TEST( vtkMRMLMarkupsNodeTest1 )
 SIMPLE_TEST( vtkMRMLMarkupsNodeTest2 )
 SIMPLE_TEST( vtkMRMLMarkupsNodeTest3 )

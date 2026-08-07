@@ -15,6 +15,7 @@ or http://www.slicer.org/copyright/copyright.txt for details.
 #include "vtkMRMLUnitNode.h"
 
 // VTK include
+#include <vtkCallbackCommand.h>
 #include <vtkObjectFactory.h>
 
 // STD include
@@ -23,12 +24,24 @@ or http://www.slicer.org/copyright/copyright.txt for details.
 //----------------------------------------------------------------------------
 vtkMRMLMeasurement::vtkMRMLMeasurement()
 {
+  this->ControlPointValuesModifiedCallbackCommand = vtkSmartPointer<vtkCallbackCommand>::New();
+  this->ControlPointValuesModifiedCallbackCommand->SetClientData(reinterpret_cast<void*>(this));
+  this->ControlPointValuesModifiedCallbackCommand->SetCallback(vtkMRMLMeasurement::ControlPointValuesModifiedCallback);
+
   this->SetPrintFormat("%5.3f %s");
 }
 
 //----------------------------------------------------------------------------
 vtkMRMLMeasurement::~vtkMRMLMeasurement()
 {
+  if (this->ControlPointValues)
+  {
+    this->ControlPointValues->RemoveObservers(vtkCommand::ModifiedEvent, this->ControlPointValuesModifiedCallbackCommand);
+    this->ControlPointValues = nullptr;
+  }
+  this->ControlPointValuesModifiedCallbackCommand->SetClientData(nullptr);
+  // Clear() resets the remaining owned objects. ControlPointValues is detached
+  // first so that destruction does not emit a public values-modified event.
   this->Clear();
 }
 
@@ -192,18 +205,7 @@ void vtkMRMLMeasurement::Copy(vtkMRMLMeasurement* src)
   {
     this->MethodCode = nullptr;
   }
-  if (src->ControlPointValues)
-  {
-    if (!this->ControlPointValues)
-    {
-      this->ControlPointValues = vtkSmartPointer<vtkDoubleArray>::New();
-    }
-    this->ControlPointValues->DeepCopy(src->ControlPointValues);
-  }
-  else
-  {
-    this->ControlPointValues = nullptr;
-  }
+  this->SetControlPointValues(src->ControlPointValues);
   if (src->MeshValue)
   {
     if (!this->MeshValue)
@@ -347,16 +349,54 @@ void vtkMRMLMeasurement::SetMethodCode(vtkCodedEntry* entry)
 //----------------------------------------------------------------------------
 void vtkMRMLMeasurement::SetControlPointValues(vtkDoubleArray* inputValues)
 {
-  if (!inputValues)
+  if (inputValues == this->ControlPointValues.GetPointer())
   {
-    this->ControlPointValues = nullptr;
     return;
   }
+
+  if (!inputValues)
+  {
+    if (!this->ControlPointValues)
+    {
+      return;
+    }
+    this->ControlPointValues->RemoveObservers(vtkCommand::ModifiedEvent, this->ControlPointValuesModifiedCallbackCommand);
+    this->ControlPointValues = nullptr;
+    this->InvokeControlPointValuesModifiedEvent();
+    return;
+  }
+
   if (!this->ControlPointValues)
   {
     this->ControlPointValues = vtkSmartPointer<vtkDoubleArray>::New();
   }
+
+  // Suppress the callback during DeepCopy and emit one notification for the
+  // complete logical update below. The array object itself is intentionally
+  // preserved so that its external observers remain valid.
+  this->ControlPointValues->RemoveObservers(vtkCommand::ModifiedEvent, this->ControlPointValuesModifiedCallbackCommand);
   this->ControlPointValues->DeepCopy(inputValues);
+  this->ControlPointValues->AddObserver(vtkCommand::ModifiedEvent, this->ControlPointValuesModifiedCallbackCommand);
+  this->InvokeControlPointValuesModifiedEvent();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::ControlPointValuesModifiedCallback(
+  vtkObject* caller, unsigned long vtkNotUsed(event), void* clientData, void* vtkNotUsed(callData))
+{
+  vtkMRMLMeasurement* self = reinterpret_cast<vtkMRMLMeasurement*>(clientData);
+  if (!self || caller != self->ControlPointValues.GetPointer())
+  {
+    return;
+  }
+  self->InvokeControlPointValuesModifiedEvent();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::InvokeControlPointValuesModifiedEvent()
+{
+  this->Modified();
+  this->InvokeEvent(ControlPointValuesModifiedEvent);
 }
 
 //----------------------------------------------------------------------------
